@@ -1,2 +1,2 @@
-# lightnn
+# Lightnn
 Lightweight Deep Learning Framework
