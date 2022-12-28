@@ -1,5 +1,6 @@
 struct Network {
     num_layers: usize,
+    sizes: Vec<usize>,
 }
 
 impl Network {
@@ -7,7 +8,11 @@ impl Network {
         Self {}
     }
 
-    fn feedforward() {}
+    fn feedforward() {
+        //Return the output of the network if ``a`` is input.
+    }
 
     fn SGD() {}
 }
+
+fn sigmoid(z: f64) {}

@@ -1,3 +1,5 @@
+use std::ops::Div;
+
 use image::*;
 use mnist::*;
 use ndarray::prelude::*;
@@ -44,6 +46,13 @@ fn load_mnist() {
         .map(|x| *x as f32);
 
     let item_num = 49999;
+    let x = train_data.slice(s![item_num, .., ..]).to_owned();
+//    / x.div(rhs)
+    println!(
+        "x len {:?}",
+        x.len()
+    );
+
     let image = bw_ndarray2_to_rgb_image(train_data.slice(s![item_num, .., ..]).to_owned());
 
     image
