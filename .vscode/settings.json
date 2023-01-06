@@ -4,7 +4,7 @@
     },
     "[rust]": {
         "editor.formatOnSave": true,
-        "editor.defaultFormatter": "matklad.rust-analyzer",
+        "editor.defaultFormatter": "rust-lang.rust-analyzer",
     },
     "rust-client.engine": "rust-analyzer",
     "rust-analyzer.checkOnSave.enable": true,

@@ -1,39 +1,63 @@
-use ndarray::Array;
-use ndarray::ArrayD;
-use ndarray::IxDyn;
-use ndarray_rand::rand::SeedableRng;
+use ndarray as nd;
+use ndarray::{Array, Array1, Array2, Array3};
+use std::ops::Add;
+
 use ndarray_rand::rand_distr::Normal;
 use ndarray_rand::RandomExt;
-use rand_isaac::isaac64::Isaac64Rng;
 
 struct Network {
     num_layers: usize,
-    sizes: Vec<u32>,
-    weights: ArrayD<_>,
+    sizes: Vec<usize>,
+    weights: Array1<Array2<f32>>,
+    biases: Array1<Array2<f32>>,
 }
 
 impl Network {
-    fn new(sizes: &[u32]) -> Network {
-        let a = sizes
-            .iter()
-            .zip(sizes[1..].iter())
-            .map(|(x, y)| Array::random((3, 2), Normal::<f64>::new(0., 1.).unwrap()))
-            .collect::<Vec<_>>();
+    fn new(sizes: &[usize]) -> Network {
         Self {
             num_layers: sizes.len(),
             sizes: sizes.to_vec(),
-            weights: ArrayD::from_vec(a),
+            biases: Array::from_vec(
+                sizes[1..]
+                    .iter()
+                    .map(|y| Array::random((*y, 1), Normal::<f32>::new(0., 1.).unwrap()))
+                    .collect::<Vec<_>>(),
+            ),
+            weights: Array::from_vec(
+                sizes
+                    .iter()
+                    .zip(sizes[1..].iter())
+                    .map(|(x, y)| Array::random((*y, *x), Normal::<f32>::new(0., 1.).unwrap()))
+                    .collect::<Vec<_>>(),
+            ),
         }
     }
 
-    fn feedforward() {
+    fn feedforward(&self, mut a: Array2<f32>) -> Array2<f32> {
         // Return the output of the network if ``a`` is input.
+        self.biases
+            .iter()
+            .zip(self.weights.iter())
+            .for_each(|(b, w)| {
+                a = sigmoid(w.dot(&a).add(b));
+            });
+        a
     }
+
+    fn update_mini_batch(&self) {}
 
     fn SGD() {}
 }
 
-fn sigmoid(z: f64) {}
+#[inline]
+fn sigmoid(z: Array2<f32>) -> Array2<f32> {
+    z.mapv_into(|v| 1.0 / (1.0 + (-v).exp()))
+}
+
+// #[inline]
+// fn sigmoid_prime(z: Array2<f32>) -> Array2<f32> {
+//     sigmoid(z)
+// }
 
 #[cfg(test)]
 mod tests {
@@ -42,7 +66,9 @@ mod tests {
     #[test]
     fn test_network() {
         //let xs = [2, 3, 1];
-        let a = Array::random((3, 2), Normal::<f64>::new(0., 1.).unwrap());
-        println!("{}", a);
+        //let a = Array::random((3, 2), Normal::<f32>::new(0., 1.).unwrap());
+        let network = Network::new(&[2, 3, 1]);
+        println!("{}", network.biases);
+        println!("{}", network.weights);
     }
 }

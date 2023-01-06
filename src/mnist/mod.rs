@@ -48,7 +48,7 @@ fn load_mnist() {
     let item_num = 49999;
     let x = train_data.slice(s![item_num, .., ..]).to_owned();
     //    / x.div(rhs)
-    println!("x len {:?}", x.len());
+    println!("x len {:?}", x);
 
     let image = bw_ndarray2_to_rgb_image(train_data.slice(s![item_num, .., ..]).to_owned());
 
