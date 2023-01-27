@@ -1,6 +1,6 @@
 use ndarray as nd;
 use ndarray::{Array, Array1, Array2, Array3};
-use std::ops::Add;
+use std::ops::{Add, Mul};
 
 use ndarray_rand::rand_distr::Normal;
 use ndarray_rand::RandomExt;
@@ -44,7 +44,11 @@ impl Network {
         a
     }
 
-    fn update_mini_batch(&self) {}
+    fn update_mini_batch(&self) {
+        //   self.biases.iter().map(|b| b.shape())
+    }
+
+    fn backprop(&self) {}
 
     fn SGD() {}
 }
@@ -54,10 +58,10 @@ fn sigmoid(z: Array2<f32>) -> Array2<f32> {
     z.mapv_into(|v| 1.0 / (1.0 + (-v).exp()))
 }
 
-// #[inline]
-// fn sigmoid_prime(z: Array2<f32>) -> Array2<f32> {
-//     sigmoid(z)
-// }
+#[inline]
+fn sigmoid_prime(z: Array2<f32>) -> Array2<f32> {
+    sigmoid(z.clone()).mul(sigmoid(z.clone()).mapv_into(|v| -v + 1.0))
+}
 
 #[cfg(test)]
 mod tests {
