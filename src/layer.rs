@@ -39,7 +39,7 @@ impl Network {
             .iter()
             .zip(self.weights.iter())
             .for_each(|(b, w)| {
-                a = sigmoid(w.dot(&a).add(b));
+                a = sigmoid(&mut w.dot(&a).add(b));
             });
         a
     }
@@ -54,13 +54,13 @@ impl Network {
 }
 
 #[inline]
-fn sigmoid(z: Array2<f32>) -> Array2<f32> {
-    z.mapv_into(|v| 1.0 / (1.0 + (-v).exp()))
+fn sigmoid(z: &mut Array2<f32>) -> Array2<f32> {
+    z.mapv(|v| 1.0 / (1.0 + (-v).exp()))
 }
 
 #[inline]
-fn sigmoid_prime(z: Array2<f32>) -> Array2<f32> {
-    sigmoid(z.clone()).mul(sigmoid(z.clone()).mapv_into(|v| -v + 1.0))
+fn sigmoid_prime(z: &mut Array2<f32>) -> Array2<f32> {
+    sigmoid(z) * sigmoid(z).mapv_into(|v| -v + 1.0)
 }
 
 #[cfg(test)]
@@ -74,5 +74,23 @@ mod tests {
         let network = Network::new(&[2, 3, 1]);
         println!("{}", network.biases);
         println!("{}", network.weights);
+    }
+
+    #[test]
+    fn test_array() {
+        //let xs = [2, 3, 1];
+        //let a = Array::random((3, 2), Normal::<f32>::new(0., 1.).unwrap());
+        let mut data = Array::<f32, _>::random([4, 3, 2], Normal::<f32>::new(0., 1.).unwrap()); //array![[-1., -2., -3.], [1., -3., 5.], [2., 2., 2.]];
+        println!("data:{:?}", data);
+        let m = data.as_slice().unwrap();
+        println!("{:?}", m);
+    }
+    use ndarray::prelude::*;
+    #[test]
+    fn test_array2() {
+        let data = array![[-1., -2., -3., -4.], [1., -3., 5., -4.], [2., 2., 2., -4.]];
+        println!("data:{:?}", data);
+        let m = data.as_slice().unwrap();
+        println!("{:?}", m);
     }
 }
