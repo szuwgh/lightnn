@@ -1,3 +1,2 @@
-mod layer;
-mod mnist;
+mod onnx;
 struct LightNN {}
