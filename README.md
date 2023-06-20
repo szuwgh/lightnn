@@ -1,2 +1,2 @@
 # Light(o)nn(x)
-Lightweight Deep Learning Framework, Swiss Army Knife for ONNX
+Lightweight deep learning rumtime, Swiss Army Knife for ONNX

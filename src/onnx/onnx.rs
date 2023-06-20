@@ -19,13 +19,15 @@
 #![allow(unused_results)]
 #![allow(unused_mut)]
 
+
+
 //! Generated file from `onnx.proto`
 // Generated for lite runtime
 
 /// Generated files are compatible only with the same version
 /// of protobuf runtime.
 const _PROTOBUF_VERSION_CHECK: () = ::protobuf::VERSION_3_2_0;
-
+use protobuf::Message as Message_imported_for_functions;
 ///  Attributes
 ///
 ///  A named attribute containing either singular float, integer, string, graph,
@@ -946,6 +948,13 @@ impl NodeProto {
         self.name.take().unwrap_or_else(|| ::std::string::String::new())
     }
 
+    pub fn get_name(&self) -> &str {
+        match self.name.as_ref() {
+            Some(v) => &v,
+            None => "",
+        }
+    }
+
     // optional string op_type = 4;
 
     pub fn op_type(&self) -> &str {
@@ -980,6 +989,13 @@ impl NodeProto {
     // Take field
     pub fn take_op_type(&mut self) -> ::std::string::String {
         self.op_type.take().unwrap_or_else(|| ::std::string::String::new())
+    }
+
+    pub fn get_op_type(&self) -> &str {
+        match self.op_type.as_ref() {
+            Some(v) => &v,
+            None => "",
+        }
     }
 
     // optional string domain = 7;
@@ -1641,6 +1657,10 @@ impl ModelProto {
     pub fn take_doc_string(&mut self) -> ::std::string::String {
         self.doc_string.take().unwrap_or_else(|| ::std::string::String::new())
     }
+
+    pub fn get_graph(&self) -> &GraphProto {
+        self.graph.as_ref().unwrap_or_else(||GraphProto::default_instance())
+    }
 }
 
 impl ::protobuf::Message for ModelProto {
@@ -2275,6 +2295,14 @@ impl GraphProto {
     // Take field
     pub fn take_doc_string(&mut self) -> ::std::string::String {
         self.doc_string.take().unwrap_or_else(|| ::std::string::String::new())
+    }
+
+    pub fn get_node(&self) -> &[NodeProto] {
+        &self.node
+    }
+
+    pub fn get_input(&self) -> &[ValueInfoProto] {
+        &self.input
     }
 }
 
