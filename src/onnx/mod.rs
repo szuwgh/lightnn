@@ -2,11 +2,12 @@
 
 pub mod onnx;
 use crate::util::error::LNResult;
+pub use onnx::ModelProto;
 use protobuf::{self, Message};
 use std::path::Path;
 
 //导入onnx模型
-pub fn load<P: AsRef<Path>>(path: P) -> LNResult<onnx::ModelProto> {
+pub fn load<P: AsRef<Path>>(path: P) -> LNResult<ModelProto> {
     let m = onnx::ModelProto::parse_from_bytes(&std::fs::read(path)?)?;
     Ok(m)
 }
