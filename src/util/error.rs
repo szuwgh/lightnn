@@ -15,6 +15,8 @@ pub enum LNError {
     Unexpected(String),
     #[error("load onnx fail: {0}")]
     LoadOnnxFail(String),
+    #[error("parse onnx model fail: {0}")]
+    ParseOnnxFail(&'static str),
 }
 
 impl From<&str> for LNError {

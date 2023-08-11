@@ -1,5 +1,7 @@
+use crate::tensor::TensorVec;
+
 pub trait Op {
-    fn eval(&self, inputs: VecLnnTensor);
+    fn eval(&self, inputs: TensorVec);
 }
 
 pub struct Add {}

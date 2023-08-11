@@ -4,6 +4,4 @@ mod session;
 mod tensor;
 mod util;
 
-
-
 pub struct LightNN {}

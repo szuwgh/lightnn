@@ -2304,6 +2304,10 @@ impl GraphProto {
     pub fn get_input(&self) -> &[ValueInfoProto] {
         &self.input
     }
+
+    pub fn get_initializer(&self) -> &[TensorProto] {
+        &self.initializer
+    }
 }
 
 impl ::protobuf::Message for GraphProto {
