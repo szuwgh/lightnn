@@ -4,10 +4,10 @@ pub mod onnx;
 use crate::session::{Node, Parser, Session};
 use crate::tensor::Tensor;
 use crate::util::error::{LNError, LNResult};
-pub use onnx::ModelProto;
+pub use onnx::{ModelProto, TensorProto};
 use protobuf::{self, Message};
+use std::collections::HashMap;
 use std::path::Path;
-
 //      "UNDEFINED":  0,
 // 		"FLOAT":      1,
 // 		"UINT8":      2,
@@ -60,6 +60,17 @@ impl Parser<Session> for onnx::ModelProto {
 
 use ::protobuf::Enum;
 use onnx::tensor_proto::DataType;
+
+impl Parser<HashMap<String, Tensor>> for Vec<TensorProto> {
+    fn parse(&self) -> LNResult<HashMap<String, Tensor>> {
+        let mut map: HashMap<String, Tensor> = HashMap::new();
+        for t in self.iter() {
+            let tensor = t.parse()?;
+            map.insert(t.name().to_string(), tensor);
+        }
+        Ok(map)
+    }
+}
 
 impl Parser<Tensor> for onnx::TensorProto {
     fn parse(&self) -> LNResult<Tensor> {
