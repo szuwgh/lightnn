@@ -13,6 +13,21 @@ pub struct Session {
 
 impl Session {
     pub fn load(m: ModelProto) -> LNResult<Session> {
+        let mut tensors: HashMap<String, Tensor> = HashMap::new();
+        //获取所有权重值
+        for tp in m.get_graph().get_initializer() {
+            let tensor = tp.parse()?;
+            tensors.insert(tp.name().to_string(), tensor);
+        }
+
+        for n in m.get_graph().get_node() {
+            println!(
+                "name:{}, input:{:?},op_type:{:?}",
+                n.get_name(),
+                n.input,
+                n.get_op_type()
+            );
+        }
         todo!()
     }
 
@@ -22,12 +37,19 @@ impl Session {
 }
 
 pub(crate) struct Node {
-    inputs: Vec<String>,
     name: String,
     op: Box<dyn Op>,
+    inputs: Vec<String>,
     outputs: Vec<String>,
 }
 
 pub trait Parser<T> {
     fn parse(&self) -> LNResult<T>;
+}
+
+mod tests {
+
+    use super::*;
+    #[test]
+    fn test_read_simple() {}
 }
