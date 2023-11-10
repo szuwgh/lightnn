@@ -1,6 +1,5 @@
-use super::onnx::f16;
 use galois::{Shape, Tensor as GTensor};
-
+pub type F16 = half::f16;
 pub type TenVec = Vec<Tensor>;
 
 #[derive(Debug)]
@@ -9,7 +8,7 @@ pub enum Tensor {
     I8(GTensor<i8>),
     I16(GTensor<i16>),
     U16(GTensor<u16>),
-    F16(GTensor<f16>),
+    F16(GTensor<F16>),
     F32(GTensor<f32>),
     I32(GTensor<i32>),
     U32(GTensor<u32>),
@@ -82,7 +81,7 @@ tensor_type!(U8, u8);
 tensor_type!(I8, i8);
 tensor_type!(I16, i16);
 tensor_type!(U16, u16);
-tensor_type!(F16, f16);
+tensor_type!(F16, F16);
 tensor_type!(F32, f32);
 tensor_type!(I32, i32);
 tensor_type!(U32, u32);

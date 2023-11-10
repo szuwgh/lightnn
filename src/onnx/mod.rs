@@ -1,16 +1,13 @@
 // @generated
 
 pub mod onnx;
-use crate::session::{Node, Parser, Session};
-use crate::tensor::Tensor;
+use crate::core::tensor::F16;
+use crate::core::{Node, Parser, Tensor};
 use crate::util::error::{LNError, LNResult};
-use half;
 pub use onnx::{ModelProto, TensorProto};
 use protobuf::{self, Message};
 use std::collections::HashMap;
 use std::path::Path;
-
-pub type f16 = half::f16;
 
 pub enum TensorDataType {
     UNDEFINED = 0,
@@ -38,11 +35,11 @@ pub fn load<P: AsRef<Path>>(path: P) -> LNResult<ModelProto> {
     Ok(m)
 }
 
-impl Parser<Session> for onnx::ModelProto {
-    fn parse(&self) -> LNResult<Session> {
-        todo!()
-    }
-}
+// impl Parser<Session> for onnx::ModelProto {
+//     fn parse(&self) -> LNResult<Session> {
+//         todo!()
+//     }
+// }
 
 use ::protobuf::Enum;
 use onnx::tensor_proto::DataType;
@@ -78,7 +75,7 @@ impl Parser<Tensor> for onnx::TensorProto {
                 DataType::INT64 => Ok(Tensor::from_raw::<i64>(&dim, raw_data)),
                 DataType::STRING => Err(LNError::ParseOnnxFail("tensor string type not support")),
                 DataType::BOOL => Ok(Tensor::from_raw::<bool>(&dim, raw_data)),
-                DataType::FLOAT16 => Ok(Tensor::from_raw::<f16>(&dim, raw_data)),
+                DataType::FLOAT16 => Ok(Tensor::from_raw::<F16>(&dim, raw_data)),
                 DataType::DOUBLE => Ok(Tensor::from_raw::<f64>(&dim, raw_data)),
                 DataType::UINT32 => Ok(Tensor::from_raw::<u32>(&dim, raw_data)),
                 DataType::UINT64 => Ok(Tensor::from_raw::<u64>(&dim, raw_data)),

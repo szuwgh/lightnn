@@ -1,9 +1,10 @@
+use super::core::op::Op;
 use super::onnx::*;
-use super::op::Op;
-use super::tensor::Tensor;
 use super::util::error::LNResult;
+use crate::core::tensor::{TenVec, Tensor};
+use crate::core::Node;
+use crate::core::Parser;
 use std::collections::HashMap;
-
 pub struct Session {
     m: ModelProto,
     param_tensor: Vec<Tensor>,
@@ -20,6 +21,8 @@ impl Session {
             tensors.insert(tp.name().to_string(), tensor);
         }
 
+        let mut nodes: Vec<Node> = Vec::new();
+
         for n in m.get_graph().get_node() {
             println!(
                 "name:{}, input:{:?},op_type:{:?}",
@@ -31,20 +34,13 @@ impl Session {
         todo!()
     }
 
-    pub fn run(&self) -> LNResult<()> {
+    pub fn run(&self, input: TenVec) -> LNResult<()> {
         Ok(())
     }
-}
 
-pub(crate) struct Node {
-    name: String,
-    op: Box<dyn Op>,
-    inputs: Vec<String>,
-    outputs: Vec<String>,
-}
-
-pub trait Parser<T> {
-    fn parse(&self) -> LNResult<T>;
+    pub fn get_input_tensor(&self) -> TenVec {
+        todo!()
+    }
 }
 
 mod tests {
