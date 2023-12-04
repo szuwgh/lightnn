@@ -948,6 +948,15 @@ impl NodeProto {
         self.name.take().unwrap_or_else(|| ::std::string::String::new())
     }
 
+    pub fn take_input(&mut self) -> Box<[String]> {
+        ::std::mem::replace(&mut self.input, ::std::vec::Vec::new()).into_boxed_slice()
+    }
+
+    pub fn take_output(&mut self) -> Box<[String]> {
+        ::std::mem::replace(&mut self.output, ::std::vec::Vec::new()).into_boxed_slice()
+       
+    }
+
     pub fn get_name(&self) -> &str {
         match self.name.as_ref() {
             Some(v) => &v,
@@ -1661,6 +1670,10 @@ impl ModelProto {
     pub fn get_graph(&self) -> &GraphProto {
         self.graph.as_ref().unwrap_or_else(||GraphProto::default_instance())
     }
+
+    pub fn get_graph_mut(&mut self) -> &mut GraphProto {
+        self.graph.as_mut().unwrap()
+    }
 }
 
 impl ::protobuf::Message for ModelProto {
@@ -2301,8 +2314,22 @@ impl GraphProto {
         &self.node
     }
 
+    pub fn get_node_mut(&mut self) -> &mut [NodeProto] {
+        &mut self.node
+    }
+
+
     pub fn get_input(&self) -> &[ValueInfoProto] {
         &self.input
+    }
+
+    pub fn get_input_mut(&mut self) -> &mut [ValueInfoProto] {
+        &mut self.input
+    }
+
+    
+    pub fn get_ouput(&self) -> &[ValueInfoProto] {
+        &self.output
     }
 
     pub fn get_initializer(&self) -> &[TensorProto] {
@@ -2470,6 +2497,8 @@ impl ::protobuf::Message for GraphProto {
         };
         &instance
     }
+
+  
 }
 
 ///  Tensors

@@ -1,8 +1,10 @@
-use super::tensor::{TenVec, Tensor};
+use ndarray::iter::Windows;
+
+use super::tensor::{Tensor, Value};
+use crate::core::tensor::Tensors;
 use crate::util::error::LNResult;
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::vec;
+use smallvec::SmallVec;
+
 pub enum Op {
     Add,
     Empty,
@@ -15,26 +17,29 @@ impl Default for Op {
 }
 
 impl Op {
-    pub(crate) fn infer(&self, inputs: TenVec) -> LNResult<TenVec> {
+    pub(crate) fn parse(s: &str) -> Self {
+        match s {
+            "add" => Op::Add,
+            _ => Op::Empty,
+        }
+    }
+
+    pub(crate) fn infer(&self, inputs: Tensors) -> LNResult<Tensors> {
         match self {
-            Op::Add => add(inputs),
+            Op::Add => Ok(Tensors::from_elem(Tensor::Own(add(inputs)?), 1)),
             _ => {
                 todo!()
             }
         }
     }
-
-    pub fn parse(s: &str) -> Op {
-        todo!()
-    }
 }
 
-fn add(inputs: TenVec) -> LNResult<TenVec> {
+fn add(inputs: Tensors) -> LNResult<Value> {
     let (a1, a2) = args_2(inputs);
-    Ok(vec![a1 + a2])
+    Ok(a1.as_value_ref() + a2.as_value_ref())
 }
 
-fn args_2(mut inputs: TenVec) -> (Tensor, Tensor) {
+fn args_2(mut inputs: Tensors) -> (Tensor, Tensor) {
     if inputs.len() < 2 {
         panic!("tensor input smaller than 2")
     }
