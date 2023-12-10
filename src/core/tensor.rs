@@ -1,5 +1,7 @@
 use galois::Shape;
 use galois::Tensor as GTensor;
+use std::fmt::Debug;
+
 use std::sync::Arc;
 pub type F16 = half::f16;
 use smallvec::SmallVec;
@@ -10,6 +12,15 @@ pub type Tensors = SmallVec<[Tensor; 4]>;
 pub enum Tensor {
     Own(Value),
     Share(Arc<Value>),
+}
+
+impl Debug for Tensor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Tensor::Own(_) => f.write_str("own"),
+            Tensor::Share(_) => f.write_str("share"),
+        }
+    }
 }
 
 impl Tensor {
@@ -104,16 +115,44 @@ impl std::ops::Add<&Value> for Value {
 }
 
 impl Value {
-    pub fn from_raw<T: TenType>(dim: &[usize], raw: &[u8]) -> Value {
+    pub fn from_raw<T: TenType>(dim: Vec<usize>, raw: Vec<u8>) -> Value {
         let t = unsafe {
             GTensor::<T>::from_raw_data(
                 raw.as_ptr() as _,
                 raw.len() / ::std::mem::size_of::<T>(),
-                Shape::from_slice(dim),
+                Shape::from_vec(dim),
             )
         };
+        ::std::mem::forget(raw);
         T::into_Value(t)
     }
+
+    pub fn from_values<T: TenType>(dim: Vec<usize>, values: Vec<T>) -> Value {
+        let t = GTensor::with_shape(values, Shape::from_vec(dim));
+        T::into_Value(t)
+    }
+
+    // pub fn from_values_ref<T: TenType>(dim: Vec<usize>, values: &[T]) -> Value {
+    //     let t = unsafe {
+    //         GTensor::<T>::from_raw_data(
+    //             values.as_ptr() as _,
+    //             values.len() / ::std::mem::size_of::<T>(),
+    //             Shape::from_vec(dim),
+    //         )
+    //     };
+    //     T::into_Value(t)
+    // }
+
+    // pub fn from_i32<T: TenType>(dim: &[usize], raw: &[T]) -> Value {
+    //     let t = unsafe {
+    //         GTensor::<T>::from_raw_data(
+    //             raw.as_ptr() as _,
+    //             raw.len() / ::std::mem::size_of::<T>(),
+    //             Shape::from_slice(dim),
+    //         )
+    //     };
+    //     T::into_Value(t)
+    // }
 }
 
 pub trait TenType: Clone {

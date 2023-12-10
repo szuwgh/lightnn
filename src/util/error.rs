@@ -1,3 +1,5 @@
+use core::convert::Infallible;
+use core::num::TryFromIntError;
 use protobuf::Error as ProtobufError;
 use std::io;
 use std::io::Error as IOError;
@@ -17,6 +19,8 @@ pub enum LNError {
     LoadOnnxFail(String),
     #[error("parse onnx model fail: {0}")]
     ParseOnnxFail(&'static str),
+    #[error("convert fail: {0}")]
+    ConvertFail(String),
 }
 
 impl From<&str> for LNError {
@@ -40,6 +44,12 @@ impl From<String> for LNError {
 impl From<IOError> for LNError {
     fn from(e: IOError) -> Self {
         LNError::Unexpected(e.to_string())
+    }
+}
+
+impl From<TryFromIntError> for LNError {
+    fn from(e: TryFromIntError) -> Self {
+        LNError::ConvertFail(e.to_string())
     }
 }
 

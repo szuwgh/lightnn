@@ -5,12 +5,12 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 pub(crate) struct Node {
-    id: usize,
-    name: Option<String>,
-    op: Op,
-    inputs: Box<[String]>,
-    weights: Box<[Tensor]>,
-    outputs: Box<[String]>,
+    pub(crate) id: usize,
+    pub(crate) name: Option<String>,
+    pub(crate) op: Op,
+    pub(crate) inputs: Box<[usize]>, //Box<[String]>, //Box<[usize]>,  //Box<[String]>,
+    pub(crate) outputs: Box<[usize]>, //Box<[String]>, //Box<[usize]>, //Box<[String]>,
+    pub(crate) weights: Box<[(String, Tensor)]>,
 }
 
 impl Node {
@@ -18,22 +18,21 @@ impl Node {
         self.op.infer(inputs)
     }
 
-    pub(crate) fn get_input(&self, value: &mut HashMap<String, Tensor>) -> LNResult<Tensors> {
+    pub(crate) fn get_input(&self, value: &mut Vec<Option<Tensor>>) -> LNResult<Tensors> {
         let inputs = self
             .inputs
             .iter()
-            .map(|i| value.remove(i).unwrap())
+            .map(|i| value.get(*i).unwrap().take().unwrap())
             .collect::<Tensors>();
         Ok(inputs)
     }
 
-    pub(crate) fn get_weight(&self, value: &HashMap<String, Tensor>) -> LNResult<Tensors> {
-        let inputs = self
-            .inputs
-            .iter()
-            .map(|i| value.get(i).unwrap().clone())
-            .collect::<Tensors>();
-        Ok(inputs)
+    pub(crate) fn get_weight(&self) -> &[(String, Tensor)] {
+        &self.weights
+    }
+
+    pub(crate) fn get_output(&self) -> &[usize] {
+        &self.outputs
     }
 }
 
@@ -41,9 +40,9 @@ impl Node {
 pub(crate) struct NodeBuilder {
     name: Option<String>,
     op: Op,
-    weights: Box<[Tensor]>,
-    inputs: Box<[String]>,
-    outputs: Box<[String]>,
+    weights: Box<[(String, Tensor)]>,
+    inputs: Box<[usize]>,  //Box<[String]>,
+    outputs: Box<[usize]>, //Box<[String]>,
 }
 
 impl NodeBuilder {
@@ -57,17 +56,17 @@ impl NodeBuilder {
         self
     }
 
-    pub fn weights(mut self, weights: Box<[Tensor]>) -> NodeBuilder {
+    pub fn weights(mut self, weights: Box<[(String, Tensor)]>) -> NodeBuilder {
         self.weights = weights;
         self
     }
 
-    pub fn inputs(mut self, inputs: Box<[String]>) -> NodeBuilder {
+    pub fn inputs(mut self, inputs: Box<[usize]>) -> NodeBuilder {
         self.inputs = inputs;
         self
     }
 
-    pub fn outputs(mut self, outputs: Box<[String]>) -> NodeBuilder {
+    pub fn outputs(mut self, outputs: Box<[usize]>) -> NodeBuilder {
         self.outputs = outputs;
         self
     }

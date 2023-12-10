@@ -5,8 +5,14 @@ use crate::core::tensor::Tensors;
 use crate::util::error::LNResult;
 use smallvec::SmallVec;
 
+#[derive(Debug)]
 pub enum Op {
     Add,
+    Reshape,
+    Conv,
+    Relu,
+    MaxPool,
+    MatMul,
     Empty,
 }
 
@@ -19,7 +25,12 @@ impl Default for Op {
 impl Op {
     pub(crate) fn parse(s: &str) -> Self {
         match s {
-            "add" => Op::Add,
+            "Add" => Op::Add,
+            "Reshape" => Op::Reshape,
+            "Conv" => Op::Conv,
+            "Relu" => Op::Relu,
+            "MaxPool" => Op::MaxPool,
+            "MatMul" => Op::MatMul,
             _ => Op::Empty,
         }
     }

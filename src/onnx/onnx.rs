@@ -952,9 +952,13 @@ impl NodeProto {
         ::std::mem::replace(&mut self.input, ::std::vec::Vec::new()).into_boxed_slice()
     }
 
-    pub fn take_output(&mut self) -> Box<[String]> {
-        ::std::mem::replace(&mut self.output, ::std::vec::Vec::new()).into_boxed_slice()
-       
+    pub fn take_output(&mut self) -> Vec<String> {
+        ::std::mem::replace(&mut self.output, ::std::vec::Vec::new())
+    }
+
+
+    pub fn get_output(&self) -> &[String] {
+     &self.output
     }
 
     pub fn get_name(&self) -> &str {
@@ -2332,8 +2336,17 @@ impl GraphProto {
         &self.output
     }
 
+    pub fn get_ouput_mut(&mut self) -> &mut [ValueInfoProto] {
+        &mut self.output
+    }
+
+
     pub fn get_initializer(&self) -> &[TensorProto] {
         &self.initializer
+    }
+
+    pub fn get_initializer_mut(&mut self) -> &mut [TensorProto] {
+        &mut self.initializer
     }
 }
 
@@ -2702,6 +2715,32 @@ impl TensorProto {
         }
     }
 
+    pub fn i32_data(&self) ->&[i32] {
+        &self.int32_data
+    }
+
+
+    pub fn take_i32_data(&mut self) ->Vec<i32> {
+        ::std::mem::replace(&mut self.int32_data, ::std::vec::Vec::new())
+    }
+
+    pub fn  take_i64_data(&mut self) ->Vec<i64>{
+        ::std::mem::replace(&mut self.int64_data, ::std::vec::Vec::new())
+    }
+
+    pub fn  take_f32_data(&mut self) -> Vec<f32> {
+        ::std::mem::replace(&mut self.float_data, ::std::vec::Vec::new())
+    }
+
+    pub fn  take_f64_data(&mut self) -> Vec<f64>{
+        ::std::mem::replace(&mut self.double_data, ::std::vec::Vec::new())
+    }
+
+    pub fn  take_u64_data(&self) -> &[u64] {
+        &self.uint64_data
+    }
+ 
+ 
     pub fn clear_raw_data(&mut self) {
         self.raw_data = ::std::option::Option::None;
     }
