@@ -13,3 +13,7 @@ pkg/
 # Added by cargo
 
 /target
+
+/model
+
+/test_data

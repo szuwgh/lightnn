@@ -8,8 +8,8 @@ pub(crate) struct Node {
     pub(crate) id: usize,
     pub(crate) name: Option<String>,
     pub(crate) op: Op,
-    pub(crate) inputs: Box<[usize]>, //Box<[String]>, //Box<[usize]>,  //Box<[String]>,
-    pub(crate) outputs: Box<[usize]>, //Box<[String]>, //Box<[usize]>, //Box<[String]>,
+    pub(crate) inputs: Box<[(usize)]>, //Box<[String]>, //Box<[usize]>,  //Box<[String]>,
+    pub(crate) outputs: Box<[usize]>,  //Box<[String]>, //Box<[usize]>, //Box<[String]>,
     pub(crate) weights: Box<[(String, Tensor)]>,
 }
 
@@ -22,7 +22,7 @@ impl Node {
         let inputs = self
             .inputs
             .iter()
-            .map(|i| value.get(*i).unwrap().take().unwrap())
+            .map(|i| value.get_mut(*i).unwrap().take().unwrap())
             .collect::<Tensors>();
         Ok(inputs)
     }
@@ -51,8 +51,8 @@ impl NodeBuilder {
         self
     }
 
-    pub fn op(mut self, op_type: &str) -> NodeBuilder {
-        self.op = Op::parse(op_type);
+    pub fn op(mut self, op: Op) -> NodeBuilder {
+        self.op = op;
         self
     }
 

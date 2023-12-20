@@ -73,7 +73,7 @@ impl Inner {
             .iter_mut()
             .map(|e| *values_map.get(e.name()).unwrap())
             .collect::<Vec<usize>>();
-        //  drop(m);
+        println!("{:?}", values_map);
         Ok(Inner {
             nodes: nodes,
             input: input.into_boxed_slice(),
@@ -86,7 +86,7 @@ impl Inner {
 impl Model {
     fn session(&self) -> LNResult<Session> {
         Ok(Session {
-            values: Vec::new(),
+            values: vec![None; self.0.values_len],
             model: self.clone(),
         })
     }
@@ -134,7 +134,7 @@ mod tests {
     use super::*;
     #[test]
     fn test_read_mnist() {
-        let mut m = load("/opt/rsproject/gptgrep/lightnn/src/model/mnist-8.onnx").unwrap();
+        let mut m = load("/opt/rsproject/gptgrep/lightnn/model/mnist-8.onnx").unwrap();
         let inner = Inner::load(m).unwrap();
         for input in inner.input.iter() {
             println!("input name:{:?}", input);
@@ -148,12 +148,13 @@ mod tests {
             println!("node output :{:?}", node.outputs);
             println!("===============================");
         }
+        println!("last output:{:?}", inner.output);
     }
 
     use super::*;
     #[test]
     fn test_read_simple() {
-        let mut m = load("/opt/rsproject/gptgrep/lightnn/src/model/simple.onnx").unwrap();
+        let mut m = load("/opt/rsproject/gptgrep/lightnn/model/simple.onnx").unwrap();
         let inner = Inner::load(m).unwrap();
         for input in inner.input.iter() {
             println!("input name:{:?}", input);

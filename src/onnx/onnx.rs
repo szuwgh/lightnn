@@ -308,6 +308,10 @@ impl AttributeProto {
     pub fn take_s(&mut self) -> ::std::vec::Vec<u8> {
         self.s.take().unwrap_or_else(|| ::std::vec::Vec::new())
     }
+
+    pub fn get_ints(&self)-> &[i64] {
+        &self.ints
+    }
 }
 
 impl ::protobuf::Message for AttributeProto {
@@ -913,6 +917,14 @@ impl NodeProto {
     }
 
     // optional string name = 3;
+
+    pub fn get_attribute(&self) -> &[AttributeProto] {
+        &self.attribute
+    }
+
+    pub fn get_attr_pro(&self, name: &str) -> Option<&AttributeProto> {
+       self.get_attribute().iter().find(|a| a.name() == name)
+    }
 
     pub fn name(&self) -> &str {
         match self.name.as_ref() {
@@ -2614,6 +2626,7 @@ impl TensorProto {
     pub fn new() -> TensorProto {
         ::std::default::Default::default()
     }
+
 
     // optional int32 data_type = 2;
 

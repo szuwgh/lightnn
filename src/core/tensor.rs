@@ -1,5 +1,5 @@
 use galois::Shape;
-use galois::Tensor as GTensor;
+use galois::{DType, Tensor as GTensor};
 use std::fmt::Debug;
 
 use std::sync::Arc;
@@ -33,151 +33,30 @@ impl Tensor {
 }
 
 #[derive(Debug, Clone)]
-pub enum Value {
-    U8(GTensor<u8>),
-    I8(GTensor<i8>),
-    I16(GTensor<i16>),
-    U16(GTensor<u16>),
-    F16(GTensor<F16>),
-    F32(GTensor<f32>),
-    I32(GTensor<i32>),
-    U32(GTensor<u32>),
-    I64(GTensor<i64>),
-    F64(GTensor<f64>),
-    U64(GTensor<u64>),
-    Bool(GTensor<bool>),
-}
-
-impl std::ops::Add<&Value> for &Value {
-    type Output = Value;
-    fn add(self, rhs: &Value) -> Self::Output {
-        let a = match (self, rhs) {
-            (Value::U8(t1), Value::U8(t2)) => Value::U8(t1 + t2),
-            (Value::I8(t1), Value::I8(t2)) => Value::I8(t1 + t2),
-            (Value::I16(t1), Value::I16(t2)) => Value::I16(t1 + t2),
-            (Value::U16(t1), Value::U16(t2)) => Value::U16(t1 + t2),
-            (Value::F32(t1), Value::F32(t2)) => Value::F32(t1 + t2),
-            (Value::I32(t1), Value::I32(t2)) => Value::I32(t1 + t2),
-            (Value::U32(t1), Value::U32(t2)) => Value::U32(t1 + t2),
-            (Value::I64(t1), Value::I64(t2)) => Value::I64(t1 + t2),
-            (Value::F64(t1), Value::F64(t2)) => Value::F64(t1 + t2),
-            (Value::U64(t1), Value::U64(t2)) => Value::U64(t1 + t2),
-            _ => {
-                panic!("types do not match");
-            }
-        };
-        a
-    }
-}
-
-impl std::ops::Add<Value> for Value {
-    type Output = Value;
-    fn add(self, rhs: Value) -> Self::Output {
-        let a = match (self, rhs) {
-            (Value::U8(t1), Value::U8(t2)) => Value::U8(t1 + t2),
-            (Value::I8(t1), Value::I8(t2)) => Value::I8(t1 + t2),
-            (Value::I16(t1), Value::I16(t2)) => Value::I16(t1 + t2),
-            (Value::U16(t1), Value::U16(t2)) => Value::U16(t1 + t2),
-            (Value::F32(t1), Value::F32(t2)) => Value::F32(t1 + t2),
-            (Value::I32(t1), Value::I32(t2)) => Value::I32(t1 + t2),
-            (Value::U32(t1), Value::U32(t2)) => Value::U32(t1 + t2),
-            (Value::I64(t1), Value::I64(t2)) => Value::I64(t1 + t2),
-            (Value::F64(t1), Value::F64(t2)) => Value::F64(t1 + t2),
-            (Value::U64(t1), Value::U64(t2)) => Value::U64(t1 + t2),
-            _ => {
-                panic!("types do not match");
-            }
-        };
-        a
-    }
-}
-
-impl std::ops::Add<&Value> for Value {
-    type Output = Value;
-    fn add(self, rhs: &Value) -> Self::Output {
-        let a = match (self, rhs) {
-            (Value::U8(t1), Value::U8(t2)) => Value::U8(t1 + t2),
-            (Value::I8(t1), Value::I8(t2)) => Value::I8(t1 + t2),
-            (Value::I16(t1), Value::I16(t2)) => Value::I16(t1 + t2),
-            (Value::U16(t1), Value::U16(t2)) => Value::U16(t1 + t2),
-            (Value::F32(t1), Value::F32(t2)) => Value::F32(t1 + t2),
-            (Value::I32(t1), Value::I32(t2)) => Value::I32(t1 + t2),
-            (Value::U32(t1), Value::U32(t2)) => Value::U32(t1 + t2),
-            (Value::I64(t1), Value::I64(t2)) => Value::I64(t1 + t2),
-            (Value::F64(t1), Value::F64(t2)) => Value::F64(t1 + t2),
-            (Value::U64(t1), Value::U64(t2)) => Value::U64(t1 + t2),
-            _ => {
-                panic!("types do not match");
-            }
-        };
-        a
-    }
-}
+pub struct Value(pub(crate) GTensor);
 
 impl Value {
-    pub fn from_raw<T: TenType>(dim: Vec<usize>, raw: Vec<u8>) -> Value {
-        let t = unsafe {
-            GTensor::<T>::from_raw_data(
-                raw.as_ptr() as _,
-                raw.len() / ::std::mem::size_of::<T>(),
-                Shape::from_vec(dim),
-            )
-        };
+    pub fn as_tensor(&self) -> &GTensor {
+        &self.0
+    }
+
+    pub fn from_raw(dim: Vec<usize>, raw: Vec<u8>, d: DType) -> Value {
+        let t = GTensor::from_raw_data(raw.as_ptr() as _, raw.len(), Shape::from_vec(dim), d);
         ::std::mem::forget(raw);
-        T::into_Value(t)
+        Value(t)
     }
 
-    pub fn from_values<T: TenType>(dim: Vec<usize>, values: Vec<T>) -> Value {
-        let t = GTensor::with_shape(values, Shape::from_vec(dim));
-        T::into_Value(t)
+    pub(crate) fn to_shape(&self) -> Vec<usize> {
+        return match &self.0 {
+            GTensor::U8(t1) => t1.as_slice().iter().map(|e| *e as usize).collect(),
+            GTensor::I8(t1) => t1.as_slice().iter().map(|e| *e as usize).collect(),
+            GTensor::I16(t1) => t1.as_slice().iter().map(|e| *e as usize).collect(),
+            GTensor::U16(t1) => t1.as_slice().iter().map(|e| *e as usize).collect(),
+            GTensor::I32(t1) => t1.as_slice().iter().map(|e| *e as usize).collect(),
+            GTensor::U32(t1) => t1.as_slice().iter().map(|e| *e as usize).collect(),
+            GTensor::I64(t1) => t1.as_slice().iter().map(|e| *e as usize).collect(),
+            GTensor::U64(t1) => t1.as_slice().iter().map(|e| *e as usize).collect(),
+            _ => Vec::new(),
+        };
     }
-
-    // pub fn from_values_ref<T: TenType>(dim: Vec<usize>, values: &[T]) -> Value {
-    //     let t = unsafe {
-    //         GTensor::<T>::from_raw_data(
-    //             values.as_ptr() as _,
-    //             values.len() / ::std::mem::size_of::<T>(),
-    //             Shape::from_vec(dim),
-    //         )
-    //     };
-    //     T::into_Value(t)
-    // }
-
-    // pub fn from_i32<T: TenType>(dim: &[usize], raw: &[T]) -> Value {
-    //     let t = unsafe {
-    //         GTensor::<T>::from_raw_data(
-    //             raw.as_ptr() as _,
-    //             raw.len() / ::std::mem::size_of::<T>(),
-    //             Shape::from_slice(dim),
-    //         )
-    //     };
-    //     T::into_Value(t)
-    // }
 }
-
-pub trait TenType: Clone {
-    fn into_Value(t: GTensor<Self>) -> Value;
-}
-
-macro_rules! Value_type {
-    ($trt:ident, $mth:ident) => {
-        impl TenType for $mth {
-            fn into_Value(t: GTensor<Self>) -> Value {
-                Value::$trt(t)
-            }
-        }
-    };
-}
-
-Value_type!(U8, u8);
-Value_type!(I8, i8);
-Value_type!(I16, i16);
-Value_type!(U16, u16);
-Value_type!(F16, F16);
-Value_type!(F32, f32);
-Value_type!(I32, i32);
-Value_type!(U32, u32);
-Value_type!(I64, i64);
-Value_type!(F64, f64);
-Value_type!(U64, u64);
-Value_type!(Bool, bool);
