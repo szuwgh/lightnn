@@ -3,6 +3,7 @@
 pub mod onnx;
 use crate::core::node::NodeBuilder;
 
+use crate::core::op::MaxPool2D;
 use crate::core::op::Op;
 use crate::core::tensor::Value;
 use crate::core::ParserMut;
@@ -18,6 +19,7 @@ use protobuf::Enum;
 use protobuf::{self, Message};
 use std::collections::HashMap;
 use std::path::Path;
+
 pub enum TensorDataType {
     UNDEFINED = 0,
     FLOAT = 1,
@@ -235,16 +237,24 @@ impl onnx::NodeProto {
                     .get_ints()
                     .cast_to::<usize>()?;
 
-                let strides = self
-                    .get_attr_pro("strides")
-                    .ok_or("get strides attribute fail")?
-                    .get_ints()
-                    .cast_to::<usize>()?;
+                let strides = self.get_attr_pro("strides");
 
-                // let max_pool = MaxPool2d {
-                //     kernel_shape: Vec::new(),
-                //     strides: Vec::new(),
-                // };
+                let (k1, k2) = match kernel_shape.as_slice() {
+                    &[k1, k2] => (k1, k2),
+                    _ => panic!("only 2d MaxPool is supported, kernel shape {kernel_shape:?}"),
+                };
+
+                let (s1, s2) = match strides {
+                    None => (1, 1),
+                    Some(a) => {
+                        let s = a.get_ints().cast_to::<usize>()?;
+                        if s.len() != 2 {
+                            panic!("only 2d MaxPool is supported, strides {s:?}");
+                        }
+                        (s[0], s[1])
+                    }
+                };
+                let max_pool = MaxPool2D((k1, k2), (s1, s2));
                 Op::MaxPool(max_pool)
             }
             "MatMul" => Op::MatMul,
@@ -344,6 +354,8 @@ mod tests {
 
 #[cfg(test)]
 mod op_tests {
+    use smallvec::smallvec;
+
     use super::*;
     use std::fs::File;
     use std::io::BufReader;
@@ -469,41 +481,77 @@ mod op_tests {
         let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
         let t1 = Tensor::Own(m.parse_mut().unwrap());
         println!("t1:{:?}\n", t1.as_value_ref().as_tensor());
-        // let relu_op: Op = Op::Relu;
-        // let mut input = Tensors::new();
-        // input.push(t1);
-
-        // let mut t3_output = relu_op.infer(input).unwrap();
-
         let file = File::open(output0).unwrap();
         let mut buf_reader = BufReader::new(file);
         let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
         let t3: Value = m.parse_mut().unwrap();
-        //    let t33 = t3_output.pop().unwrap();
 
         println!("t3:{:?}", t3);
-        //   println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
-        // assert!(*(t33.as_value_ref().as_tensor()) == *t3.as_tensor());
         println!("pass relu success")
     }
 
     #[test]
-    fn test_op_maxpool_2d() {
+    fn test_op_maxpool_2d_default() {
         let input0 = PathBuf::from(TEST_DATA_PATH)
             .join("test_maxpool_2d_default/test_data_set_0/input_0.pb");
         let output0 = PathBuf::from(TEST_DATA_PATH)
             .join("test_maxpool_2d_default/test_data_set_0/output_0.pb");
 
+        let model = PathBuf::from(TEST_DATA_PATH).join("test_maxpool_2d_default/model.onnx");
+
         let file = File::open(input0).unwrap();
         let mut buf_reader = BufReader::new(file);
+
         let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
         let t1 = Tensor::Own(m.parse_mut().unwrap());
         println!("t1:{:?}\n", t1);
-        // let relu_op: Op = Op::Relu;
-        // let mut input = Tensors::new();
-        // input.push(t1);
+
+        let file = File::open(model).unwrap();
+        let mut buf_reader = BufReader::new(file);
+
+        let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
+
+        let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
+
+        let output = op.infer(smallvec![t1]).unwrap();
+
+        let file = File::open(output0).unwrap();
+        let mut buf_reader = BufReader::new(file);
+        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
+        let t3: Value = m.parse_mut().unwrap();
+
+        println!("t3:{:?}\n", t3);
+        println!("t3_output:{:?}", output[0].as_value_ref().as_tensor());
+        assert!(*(output[0].as_value_ref().as_tensor()) == *t3.as_tensor());
+        println!("pass maxpool_2d_default success")
+    }
+
+    #[test]
+    fn test_op_maxpool_2d_strides() {
+        let input0 = PathBuf::from(TEST_DATA_PATH)
+            .join("test_maxpool_2d_strides/test_data_set_0/input_0.pb");
+        let output0 = PathBuf::from(TEST_DATA_PATH)
+            .join("test_maxpool_2d_strides/test_data_set_0/output_0.pb");
+
+        let model = PathBuf::from(TEST_DATA_PATH).join("test_maxpool_2d_strides/model.onnx");
+
+        let file = File::open(input0).unwrap();
+        let mut buf_reader = BufReader::new(file);
+
+        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
+        let t1 = Tensor::Own(m.parse_mut().unwrap());
+        println!("t1:{:?}\n", t1);
+
+        let file = File::open(model).unwrap();
+        let mut buf_reader = BufReader::new(file);
+
+        let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
 
         // let mut t3_output = relu_op.infer(input).unwrap();
+
+        let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
+
+        let output = op.infer(smallvec![t1]).unwrap();
 
         let file = File::open(output0).unwrap();
         let mut buf_reader = BufReader::new(file);
@@ -511,9 +559,9 @@ mod op_tests {
         let t3: Value = m.parse_mut().unwrap();
         //    let t33 = t3_output.pop().unwrap();
 
-        println!("t3:{:?}", t3);
-        //   println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
-        // assert!(*(t33.as_value_ref().as_tensor()) == *t3.as_tensor());
-        println!("pass relu success")
+        println!("t3:{:?}\n", t3);
+        println!("t3_output:{:?}", output[0].as_value_ref().as_tensor());
+        assert!(*(output[0].as_value_ref().as_tensor()) == *t3.as_tensor());
+        println!("pass maxpool_2d_strides success")
     }
 }
