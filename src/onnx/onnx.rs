@@ -28,6 +28,8 @@
 /// of protobuf runtime.
 const _PROTOBUF_VERSION_CHECK: () = ::protobuf::VERSION_3_2_0;
 use protobuf::Message as Message_imported_for_functions;
+
+use crate::util::error::LNResult;
 ///  Attributes
 ///
 ///  A named attribute containing either singular float, integer, string, graph,
@@ -911,6 +913,42 @@ impl<'a> ::std::default::Default for &'a NodeProto {
     }
 }
 
+pub(crate) trait Attr {
+    fn get(attr: &AttributeProto) -> Option<&Self>;
+}
+
+impl Attr for i64 {
+    fn get(attr: &AttributeProto) -> Option<&Self> {
+        attr.i.as_ref()
+    }
+}
+
+impl Attr for f32 {
+    fn get(attr: &AttributeProto) -> Option<&Self> {
+       attr.f.as_ref()
+    }
+}
+
+impl Attr for [i64] {
+    fn get(attr: &AttributeProto) -> Option<&Self> {
+      Some(attr.ints.as_slice())
+    }
+}
+
+impl Attr for [f32] {
+    fn get(attr: &AttributeProto) -> Option<&Self> {
+      Some(attr.floats.as_slice())
+    }
+}
+
+// impl Attr for str {
+//     fn get(attr: &AttributeProto) -> Option<&Self> {
+//         let s = attr.s?;
+//         std::str::from_utf8(s).map_or(default, f)
+//     }
+// }
+
+
 impl NodeProto {
     pub fn new() -> NodeProto {
         ::std::default::Default::default()
@@ -922,9 +960,15 @@ impl NodeProto {
         &self.attribute
     }
 
-    pub fn get_attr_pro(&self, name: &str) -> Option<&AttributeProto> {
-       self.get_attribute().iter().find(|a| a.name() == name)
-    }
+    // pub fn get_attr_pro(&self, name: &str) -> Option<&AttributeProto> {
+    //    self.get_attribute().iter().find(|a| a.name() == name)
+    // }
+
+
+    pub(crate) fn get_attr_pro<'a, T:Attr+ ?Sized>(&'a self, name: &str) -> Option<&'a T> {
+       let attr =  self.get_attribute().iter().find(|a| a.name() == name)?;
+       T::get(attr)
+     }
 
     pub fn name(&self) -> &str {
         match self.name.as_ref() {

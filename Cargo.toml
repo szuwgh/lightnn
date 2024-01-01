@@ -14,3 +14,4 @@ protobuf = { version = "3.2.0", features = ["with-bytes"] }
 half = "2.3.1"
 galois = { path = "../galois", version = "0.1.0" }
 smallvec = "1.11.2"
+rayon = "1.7.0"

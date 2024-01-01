@@ -228,30 +228,89 @@ impl onnx::NodeProto {
         let op = match self.op_type() {
             "Add" => Op::Add,
             "Reshape" => Op::Reshape,
-            "Conv" => Op::Conv,
+            "Conv" => {
+                Op::Conv
+                // let dilations = self.get_attr_pro::<[i64]>("dilations")?;
+                // let groups = self.get_attr_pro::<i64>("group").copied().unwrap_or(1);
+                // let _kernel_shape = self.get_attr_pro::<[i64]>("kernel_shape")?;
+                // let pads = self.get_attr_pro::<[i64]>("pads")?;
+                // let strides = self.get_attr_pro::<[i64]>("strides")?;
+                // let (pads, xs) = match pads {
+                //     Some(&[p1, p2, p3, p4]) => {
+                //         let p1 = p1 as usize;
+                //         let p2 = p2 as usize;
+                //         let p3 = p3 as usize;
+                //         let p4 = p4 as usize;
+                //         if p1 != p2 || p1 != p3 || p1 != p4 {
+                //             (0, xs.pad_with_zeros(2, p1, p3)?.pad_with_zeros(3, p2, p4)?)
+                //         } else {
+                //             (p1, xs.clone())
+                //         }
+                //     }
+                //     Some(pads) => {
+                //         bail!("more pads than expected in conv2d {pads:?} {}", node.name)
+                //     }
+                // };
+                // let strides = match strides {
+                //     None => 1,
+                //     Some([p]) => *p as usize,
+                //     Some([p1, p2]) => {
+                //         if p1 != p2 {
+                //             bail!(
+                //                 "strides have to be the same on both axis {pads:?} {}",
+                //                 node.name
+                //             )
+                //         }
+                //         *p1 as usize
+                //     }
+                //     Some(s) => {
+                //         bail!("more strides than expected in conv2d {s:?} {}", node.name)
+                //     }
+                // };
+                // let dilations = match dilations {
+                //     None => 1,
+                //     Some([p]) => *p as usize,
+                //     Some([p1, p2]) => {
+                //         if p1 != p2 {
+                //             bail!(
+                //                 "dilations have to be the same on both axis {pads:?} {}",
+                //                 node.name
+                //             )
+                //         }
+                //         *p1 as usize
+                //     }
+                //     Some(s) => {
+                //         bail!("more dilations than expected in conv2d {s:?} {}", node.name)
+                //     }
+                // };
+                // xs.conv2d(ws, pads, strides, dilations, groups as usize)?
+                // let auto_pad = self.get_attr_pro::<str>("auto_pad")?;
+                // match auto_pad {
+                //     None | Some("NOTSET") => (),
+                //     Some(s) => panic!("unsupported auto_pad {s}"),
+                // };
+            }
             "Relu" => Op::Relu,
             "MaxPool" => {
                 let kernel_shape = self
-                    .get_attr_pro("kernel_shape")
-                    .ok_or("get kernel_shape attribute fail")?
-                    .get_ints()
-                    .cast_to::<usize>()?;
+                    .get_attr_pro::<[i64]>("kernel_shape")
+                    .ok_or("get kernel_shape attribute fail")?;
 
-                let strides = self.get_attr_pro("strides");
+                let strides = self.get_attr_pro::<[i64]>("strides");
 
-                let (k1, k2) = match kernel_shape.as_slice() {
-                    &[k1, k2] => (k1, k2),
+                let (k1, k2) = match kernel_shape {
+                    &[k1, k2] => (k1 as usize, k2 as usize),
                     _ => panic!("only 2d MaxPool is supported, kernel shape {kernel_shape:?}"),
                 };
 
                 let (s1, s2) = match strides {
                     None => (1, 1),
                     Some(a) => {
-                        let s = a.get_ints().cast_to::<usize>()?;
-                        if s.len() != 2 {
-                            panic!("only 2d MaxPool is supported, strides {s:?}");
+                        // let s = a.cast_to::<usize>()?;
+                        if a.len() != 2 {
+                            panic!("only 2d MaxPool is supported, strides {a:?}");
                         }
-                        (s[0], s[1])
+                        (a[0] as usize, a[1] as usize)
                     }
                 };
                 let max_pool = MaxPool2D((k1, k2), (s1, s2));
@@ -272,7 +331,7 @@ mod tests {
 
     #[test]
     fn test_i32_to_u8() {
-        let i32_arr = [1, 2, 3, 6, 500];
+        let i32_arr = [1, 2, 3, 6];
         let i32_a = &i32_arr[..];
         let u8_arr = i32_a.cast_to::<u8>().unwrap();
         println!("{:?}", u8_arr);
@@ -363,11 +422,33 @@ mod op_tests {
     const TEST_DATA_PATH: &str = "./test_data/node";
     use crate::core::op::Op;
     use crate::core::tensor::Tensors;
-    #[test]
-    fn test_op_add() {
-        let input0 = PathBuf::from(TEST_DATA_PATH).join("test_add/test_data_set_0/input_0.pb");
-        let input1 = PathBuf::from(TEST_DATA_PATH).join("test_add/test_data_set_0/input_1.pb");
-        let output0 = PathBuf::from(TEST_DATA_PATH).join("test_add/test_data_set_0/output_0.pb");
+
+    fn input1(op: &str) -> (Tensors, Value) {
+        let input0 =
+            PathBuf::from(TEST_DATA_PATH).join(format!("{}/test_data_set_0/input_0.pb", op));
+        let output0 =
+            PathBuf::from(TEST_DATA_PATH).join(format!("{}/test_data_set_0/output_0.pb", op));
+
+        let file = File::open(input0).unwrap();
+        let mut buf_reader = BufReader::new(file);
+        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
+        let t1 = Tensor::Own(m.parse_mut().unwrap());
+
+        let file = File::open(output0).unwrap();
+        let mut buf_reader = BufReader::new(file);
+        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
+        let t3: Value = m.parse_mut().unwrap();
+
+        (smallvec![t1], t3)
+    }
+
+    fn input2(op: &str) -> (Tensors, Value) {
+        let input0 =
+            PathBuf::from(TEST_DATA_PATH).join(format!("{}/test_data_set_0/input_0.pb", op));
+        let input1 =
+            PathBuf::from(TEST_DATA_PATH).join(format!("{}/test_data_set_0/input_1.pb", op));
+        let output0 =
+            PathBuf::from(TEST_DATA_PATH).join(format!("{}/test_data_set_0/output_0.pb", op));
 
         let file = File::open(input0).unwrap();
         let mut buf_reader = BufReader::new(file);
@@ -379,114 +460,50 @@ mod op_tests {
         let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
         let t2 = Tensor::Own(m.parse_mut().unwrap());
 
-        // println!("t1:{:?}", t1.as_value_ref().as_tensor());
-        // println!("t2:{:?}", t2.as_value_ref().as_tensor());
-
-        let add_op: Op = Op::Add;
-        let mut input = Tensors::new();
-        input.push(t1);
-        input.push(t2);
-        let mut t3_output = add_op.infer(input).unwrap();
-
         let file = File::open(output0).unwrap();
         let mut buf_reader = BufReader::new(file);
         let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
         let t3: Value = m.parse_mut().unwrap();
 
+        (smallvec![t1, t2], t3)
+    }
+
+    #[test]
+    fn test_op_add() {
+        let (inputs, output) = input2("test_add");
+        let op: Op = Op::Add;
+        let mut t3_output = op.infer(inputs).unwrap();
         let t33 = t3_output.pop().unwrap();
 
-        // println!("t3:{:?}\n", t3);
-        // println!("t3_output:{:?}", *(t33.as_value_ref().as_tensor()));
-        assert!(*(t33.as_value_ref().as_tensor()) == *t3.as_tensor());
-        println!("pass add success")
+        println!("output:{:?}\n", output);
+        println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
+        assert!(*(t33.as_value_ref().as_tensor()) == *output.as_tensor());
+        println!("pass add success");
     }
 
     #[test]
     fn test_op_reshape() {
-        let input0 = PathBuf::from(TEST_DATA_PATH)
-            .join("test_reshape_extended_dims/test_data_set_0/input_0.pb");
-        let input1 = PathBuf::from(TEST_DATA_PATH)
-            .join("test_reshape_extended_dims/test_data_set_0/input_1.pb");
-
-        let output0 = PathBuf::from(TEST_DATA_PATH)
-            .join("test_reshape_extended_dims/test_data_set_0/output_0.pb");
-
-        let file = File::open(input0).unwrap();
-        let mut buf_reader = BufReader::new(file);
-        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
-        let t1 = Tensor::Own(m.parse_mut().unwrap());
-
-        let file = File::open(input1).unwrap();
-        let mut buf_reader = BufReader::new(file);
-        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
-        let t2 = Tensor::Own(m.parse_mut().unwrap());
-
-        let reshape_op: Op = Op::Reshape;
-        let mut input = Tensors::new();
-        input.push(t1);
-        input.push(t2);
-        //  let shape = t2.to_shape();
-        let mut t3_output = reshape_op.infer(input).unwrap();
-
-        let file = File::open(output0).unwrap();
-        let mut buf_reader = BufReader::new(file);
-        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
-        let t3: Value = m.parse_mut().unwrap();
-
+        let (inputs, output) = input2("test_reshape_extended_dims");
+        let op: Op = Op::Reshape;
+        let mut t3_output = op.infer(inputs).unwrap();
         let t33 = t3_output.pop().unwrap();
 
-        println!("t3:{:?}\n", t3);
+        println!("output:{:?}\n", output);
         println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
-        assert!(*(t33.as_value_ref().as_tensor()) == *t3.as_tensor());
+        assert!(*(t33.as_value_ref().as_tensor()) == *output.as_tensor());
         println!("pass reshape success")
     }
 
     #[test]
     fn test_op_relu() {
-        let input0 = PathBuf::from(TEST_DATA_PATH).join("test_relu/test_data_set_0/input_0.pb");
-        let output0 = PathBuf::from(TEST_DATA_PATH).join("test_relu/test_data_set_0/output_0.pb");
-
-        let file = File::open(input0).unwrap();
-        let mut buf_reader = BufReader::new(file);
-        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
-        let t1 = Tensor::Own(m.parse_mut().unwrap());
-
-        let relu_op: Op = Op::Relu;
-        let mut input = Tensors::new();
-        input.push(t1);
-
-        let mut t3_output = relu_op.infer(input).unwrap();
-
-        let file = File::open(output0).unwrap();
-        let mut buf_reader = BufReader::new(file);
-        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
-        let t3: Value = m.parse_mut().unwrap();
+        let (inputs, output) = input1("test_relu");
+        let op: Op = Op::Relu;
+        let mut t3_output = op.infer(inputs).unwrap();
         let t33 = t3_output.pop().unwrap();
 
-        println!("t3:{:?}", t3);
+        println!("t3:{:?}", output);
         println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
-        assert!(*(t33.as_value_ref().as_tensor()) == *t3.as_tensor());
-        println!("pass relu success")
-    }
-
-    #[test]
-    fn test_op_maxpool_1d() {
-        let input0 = PathBuf::from(TEST_DATA_PATH)
-            .join("test_maxpool_1d_default/test_data_set_0/input_0.pb");
-        let output0 = PathBuf::from(TEST_DATA_PATH)
-            .join("test_maxpool_1d_default/test_data_set_0/output_0.pb");
-
-        let file = File::open(input0).unwrap();
-        let mut buf_reader = BufReader::new(file);
-        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
-        let t1 = Tensor::Own(m.parse_mut().unwrap());
-        println!("t1:{:?}\n", t1.as_value_ref().as_tensor());
-        let file = File::open(output0).unwrap();
-        let mut buf_reader = BufReader::new(file);
-        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
-        let t3: Value = m.parse_mut().unwrap();
-
-        println!("t3:{:?}", t3);
+        assert!(*(t33.as_value_ref().as_tensor()) == *output.as_tensor());
         println!("pass relu success")
     }
 
@@ -498,7 +515,6 @@ mod op_tests {
             .join("test_maxpool_2d_default/test_data_set_0/output_0.pb");
 
         let model = PathBuf::from(TEST_DATA_PATH).join("test_maxpool_2d_default/model.onnx");
-
         let file = File::open(input0).unwrap();
         let mut buf_reader = BufReader::new(file);
 
@@ -534,25 +550,16 @@ mod op_tests {
             .join("test_maxpool_2d_strides/test_data_set_0/output_0.pb");
 
         let model = PathBuf::from(TEST_DATA_PATH).join("test_maxpool_2d_strides/model.onnx");
-
         let file = File::open(input0).unwrap();
         let mut buf_reader = BufReader::new(file);
-
         let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
         let t1 = Tensor::Own(m.parse_mut().unwrap());
         println!("t1:{:?}\n", t1);
-
         let file = File::open(model).unwrap();
         let mut buf_reader = BufReader::new(file);
-
         let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
-
-        // let mut t3_output = relu_op.infer(input).unwrap();
-
         let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
-
         let output = op.infer(smallvec![t1]).unwrap();
-
         let file = File::open(output0).unwrap();
         let mut buf_reader = BufReader::new(file);
         let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();

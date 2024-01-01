@@ -1,12 +1,11 @@
-use core::convert::Infallible;
 use core::num::TryFromIntError;
+use core::str::Utf8Error;
 use protobuf::Error as ProtobufError;
 use std::io;
 use std::io::Error as IOError;
 use thiserror::Error;
-
 pub type LNResult<T> = Result<T, LNError>;
-
+use galois::DType;
 #[derive(Error, Debug)]
 pub enum LNError {
     #[error("could not deserialize model: {0}")]
@@ -21,6 +20,12 @@ pub enum LNError {
     ParseOnnxFail(&'static str),
     #[error("convert fail: {0}")]
     ConvertFail(String),
+    #[error("dtype mismatch in {op}, lhs: {lhs:?}, rhs: {rhs:?}")]
+    DTypeMismatchBinaryOp {
+        lhs: DType,
+        rhs: DType,
+        op: &'static str,
+    },
 }
 
 impl From<&str> for LNError {
@@ -56,5 +61,11 @@ impl From<TryFromIntError> for LNError {
 impl From<LNError> for String {
     fn from(e: LNError) -> Self {
         format!("{}", e)
+    }
+}
+
+impl From<Utf8Error> for LNError {
+    fn from(e: Utf8Error) -> Self {
+        LNError::Unexpected(e.to_string())
     }
 }

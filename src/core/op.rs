@@ -1,12 +1,14 @@
 use super::tensor::{Tensor, Value};
 use crate::core::tensor::Tensors;
+use crate::util::error::LNError;
 use crate::util::error::LNResult;
 use galois::shape::Dim;
 use galois::DTensor;
 use galois::Tensor as GTensor;
 use galois::TensorType;
 use galois::{Shape, TensorValue};
-use smallvec::{smallvec, SmallVec};
+use rayon::prelude::*;
+use smallvec::smallvec;
 #[derive(Debug)]
 pub(crate) enum Op {
     Add,
@@ -99,6 +101,69 @@ fn relu(inputs: Tensors) -> LNResult<Tensor> {
         }
     });
     Ok(a1)
+}
+
+trait Map2 {
+    const OP: &'static str;
+    fn f<T: TensorType>(&self, src: &[T], shape: &Dim, k: &[T], shape_k: &Dim) -> LNResult<Vec<T>>;
+
+    fn map(&self, inp1: Tensor, inp2: Tensor, new_dim: Shape) -> LNResult<GTensor> {
+        let (t1, t2) = (
+            inp1.as_value_ref().as_tensor(),
+            inp2.as_value_ref().as_tensor(),
+        );
+        match (t1, t2) {
+            (GTensor::U8(dt1), GTensor::U8(dt2)) => Ok(GTensor::U8(DTensor::with_shape(
+                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
+                new_dim,
+            ))),
+            (GTensor::I8(dt1), GTensor::I8(dt2)) => Ok(GTensor::I8(DTensor::with_shape(
+                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
+                new_dim,
+            ))),
+            (GTensor::I16(dt1), GTensor::I16(dt2)) => Ok(GTensor::I16(DTensor::with_shape(
+                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
+                new_dim,
+            ))),
+            (GTensor::U16(dt1), GTensor::U16(dt2)) => Ok(GTensor::U16(DTensor::with_shape(
+                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
+                new_dim,
+            ))),
+            (GTensor::I32(dt1), GTensor::I32(dt2)) => Ok(GTensor::I32(DTensor::with_shape(
+                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
+                new_dim,
+            ))),
+            (GTensor::U32(dt1), GTensor::U32(dt2)) => Ok(GTensor::U32(DTensor::with_shape(
+                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
+                new_dim,
+            ))),
+            (GTensor::I64(dt1), GTensor::I64(dt2)) => Ok(GTensor::I64(DTensor::with_shape(
+                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
+                new_dim,
+            ))),
+            (GTensor::U64(dt1), GTensor::U64(dt2)) => Ok(GTensor::U64(DTensor::with_shape(
+                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
+                new_dim,
+            ))),
+            (GTensor::F16(dt1), GTensor::F16(dt2)) => Ok(GTensor::F16(DTensor::with_shape(
+                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
+                new_dim,
+            ))),
+            (GTensor::F32(dt1), GTensor::F32(dt2)) => Ok(GTensor::F32(DTensor::with_shape(
+                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
+                new_dim,
+            ))),
+            (GTensor::F64(dt1), GTensor::F64(dt2)) => Ok(GTensor::F64(DTensor::with_shape(
+                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
+                new_dim,
+            ))),
+            _ => Err(LNError::DTypeMismatchBinaryOp {
+                lhs: t1.dtype(),
+                rhs: t2.dtype(),
+                op: Self::OP,
+            }),
+        }
+    }
 }
 
 trait Map {
@@ -212,6 +277,161 @@ impl Map for MaxPool2D {
             }
         }
         Ok(dst)
+    }
+}
+
+pub struct ParamsConv2D {
+    pub(crate) b_size: usize,
+    pub(crate) i_h: usize,
+    pub(crate) i_w: usize,
+    pub(crate) k_h: usize,
+    pub(crate) k_w: usize,
+    pub(crate) c_out: usize,
+    pub(crate) c_in: usize,
+    pub(crate) padding: usize,
+    pub(crate) stride: usize,
+    pub(crate) dilation: usize,
+}
+
+impl ParamsConv2D {
+    pub(crate) fn out_h(&self) -> usize {
+        (self.i_h + 2 * self.padding - self.dilation * (self.k_h - 1) - 1) / self.stride + 1
+    }
+
+    pub(crate) fn out_w(&self) -> usize {
+        (self.i_w + 2 * self.padding - self.dilation * (self.k_w - 1) - 1) / self.stride + 1
+    }
+
+    pub(crate) fn out_dims(&self) -> Vec<usize> {
+        vec![self.b_size, self.c_out, self.out_h(), self.out_w()]
+    }
+}
+
+struct Conv2DImpl(ParamsConv2D);
+
+impl Map2 for Conv2DImpl {
+    const OP: &'static str = "conv2d";
+    fn f<T: TensorType>(&self, inp: &[T], inp_d: &Dim, k: &[T], k_d: &Dim) -> LNResult<Vec<T>> {
+        let p = &self.0;
+
+        let (inp_s0, inp_s1, inp_s2, inp_s3) = galois::shape::dims4(inp_d.stride());
+        let (k_s0, k_s1, k_s2, k_s3) = galois::shape::dims4(k_d.stride());
+        let (out_h, out_w) = (p.out_h(), p.out_w());
+
+        // Output shape: [b_size, c_out, out_h, out_w].
+        let dst = vec![T::zero(); p.b_size * p.c_out * out_h * out_w];
+
+        // TODO: Avoid making this copy if `inp` already has the appropriate layout.
+        let mut inp_cont = vec![T::zero(); p.b_size * p.c_in * p.i_h * p.i_w];
+        let cont_s0 = p.i_h * p.i_w * p.c_in;
+        let cont_s1 = p.i_w * p.c_in;
+        let cont_s2 = p.c_in;
+        for b_idx in 0..p.b_size {
+            for h_idx in 0..p.i_h {
+                for w_idx in 0..p.i_w {
+                    for c_idx in 0..p.c_in {
+                        let src_idx =
+                            b_idx * inp_s0 + c_idx * inp_s1 + h_idx * inp_s2 + w_idx * inp_s3;
+                        let dst_idx = b_idx * cont_s0 + h_idx * cont_s1 + w_idx * cont_s2 + c_idx;
+                        inp_cont[dst_idx] = inp[src_idx]
+                    }
+                }
+            }
+        }
+
+        for offset_h in 0..p.k_h {
+            for offset_w in 0..p.k_w {
+                (0..p.c_out).into_par_iter().for_each(|dst_c_idx| {
+                    let dst_idx = dst_c_idx * out_w * out_h;
+                    let k_cont = (0..p.c_in)
+                        .map(|c_in_idx| {
+                            k[dst_c_idx * k_s0
+                                + c_in_idx * k_s1
+                                + offset_h * k_s2
+                                + offset_w * k_s3]
+                        })
+                        .collect::<Vec<_>>();
+                    for b_idx in 0..p.b_size {
+                        let dst_idx = dst_idx + b_idx * p.c_out * out_h * out_w;
+                        for dst_h in 0..out_h {
+                            let dst_idx = dst_idx + dst_h * out_w;
+                            let src_h = p.stride * dst_h + offset_h * p.dilation;
+                            if src_h < p.padding || src_h >= p.i_h + p.padding {
+                                continue;
+                            }
+                            let src_h = src_h - p.padding;
+                            for dst_w in 0..out_w {
+                                let dst_idx = dst_idx + dst_w;
+                                let src_w = p.stride * dst_w + offset_w * p.dilation;
+                                if src_w < p.padding || src_w >= p.i_w + p.padding {
+                                    continue;
+                                }
+                                let src_w = src_w - p.padding;
+                                let inp_cont = &inp_cont
+                                    [b_idx * cont_s0 + src_h * cont_s1 + src_w * cont_s2..];
+                                assert!(inp_cont.len() >= p.c_in);
+                                assert!(k_cont.len() >= p.c_in);
+                                let mut d = T::zero();
+                                unsafe {
+                                    T::vec_dot(inp_cont.as_ptr(), k_cont.as_ptr(), &mut d, p.c_in)
+                                }
+                                let dst_p = dst.as_ptr();
+                                // Safety: dst_idx are uniques per dst_c_idx which is used to parallelise
+                                // the different tasks so no two threads can try to write at the same
+                                // location.
+                                unsafe {
+                                    let ptr = dst_p.add(dst_idx) as *mut T;
+                                    *ptr += d
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        Ok(dst)
+    }
+}
+
+struct Conv2DParam {
+    padding: usize,
+    stride: usize,
+    dilation: usize,
+    groups: usize,
+}
+
+struct Conv2D(Conv2DParam);
+
+impl Conv2D {
+    pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
+        let (a1, a2) = args_2(inputs);
+        let (t1, t2) = (a1.as_value_ref().as_tensor(), a2.as_value_ref().as_tensor());
+
+        let (b_size, c_in, i_h, i_w) = t1.shape().dims4();
+        let (c_out, c_in_k, k_h, k_w) = t2.shape().dims4();
+        let groups = self.0.groups;
+        if c_in != c_in_k * groups {
+            panic!("in_channel mismatch between input")
+        }
+        let p = ParamsConv2D {
+            b_size: b_size,
+            i_h: i_h,
+            i_w: i_w,
+            k_h: k_h,
+            k_w: k_w,
+            c_out: c_out / groups,
+            c_in: c_in / groups,
+            padding: self.0.padding,
+            stride: self.0.stride,
+            dilation: self.0.dilation,
+        };
+        let new_dim = p.out_dims();
+        Ok(Tensor::Own(Value(Conv2DImpl(p).map(
+            a1,
+            a2,
+            Shape::from_vec(new_dim),
+        )?)))
     }
 }
 
