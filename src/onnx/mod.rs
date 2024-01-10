@@ -4,7 +4,7 @@ pub mod onnx;
 use crate::core::node::NodeBuilder;
 
 use crate::core::op::MaxPool2D;
-use crate::core::op::Op;
+use crate::core::op::{Op, *};
 use crate::core::tensor::Value;
 use crate::core::ParserMut;
 use crate::core::{Node, Tensor};
@@ -229,66 +229,70 @@ impl onnx::NodeProto {
             "Add" => Op::Add,
             "Reshape" => Op::Reshape,
             "Conv" => {
-                Op::Conv
-                // let dilations = self.get_attr_pro::<[i64]>("dilations")?;
-                // let groups = self.get_attr_pro::<i64>("group").copied().unwrap_or(1);
-                // let _kernel_shape = self.get_attr_pro::<[i64]>("kernel_shape")?;
-                // let pads = self.get_attr_pro::<[i64]>("pads")?;
-                // let strides = self.get_attr_pro::<[i64]>("strides")?;
-                // let (pads, xs) = match pads {
-                //     Some(&[p1, p2, p3, p4]) => {
-                //         let p1 = p1 as usize;
-                //         let p2 = p2 as usize;
-                //         let p3 = p3 as usize;
-                //         let p4 = p4 as usize;
-                //         if p1 != p2 || p1 != p3 || p1 != p4 {
-                //             (0, xs.pad_with_zeros(2, p1, p3)?.pad_with_zeros(3, p2, p4)?)
-                //         } else {
-                //             (p1, xs.clone())
-                //         }
-                //     }
-                //     Some(pads) => {
-                //         bail!("more pads than expected in conv2d {pads:?} {}", node.name)
-                //     }
-                // };
-                // let strides = match strides {
-                //     None => 1,
-                //     Some([p]) => *p as usize,
-                //     Some([p1, p2]) => {
-                //         if p1 != p2 {
-                //             bail!(
-                //                 "strides have to be the same on both axis {pads:?} {}",
-                //                 node.name
-                //             )
-                //         }
-                //         *p1 as usize
-                //     }
-                //     Some(s) => {
-                //         bail!("more strides than expected in conv2d {s:?} {}", node.name)
-                //     }
-                // };
-                // let dilations = match dilations {
-                //     None => 1,
-                //     Some([p]) => *p as usize,
-                //     Some([p1, p2]) => {
-                //         if p1 != p2 {
-                //             bail!(
-                //                 "dilations have to be the same on both axis {pads:?} {}",
-                //                 node.name
-                //             )
-                //         }
-                //         *p1 as usize
-                //     }
-                //     Some(s) => {
-                //         bail!("more dilations than expected in conv2d {s:?} {}", node.name)
-                //     }
-                // };
-                // xs.conv2d(ws, pads, strides, dilations, groups as usize)?
-                // let auto_pad = self.get_attr_pro::<str>("auto_pad")?;
-                // match auto_pad {
-                //     None | Some("NOTSET") => (),
-                //     Some(s) => panic!("unsupported auto_pad {s}"),
-                // };
+                let dilations = self.get_attr_pro::<[i64]>("dilations");
+                let groups = self.get_attr_pro::<i64>("group").copied().unwrap_or(1);
+                let _kernel_shape = self.get_attr_pro::<[i64]>("kernel_shape");
+                let pads = self.get_attr_pro::<[i64]>("pads");
+                let strides = self.get_attr_pro::<[i64]>("strides");
+                let pads = match pads {
+                    Some(&[p1, p2, p3, p4]) => {
+                        let p1 = p1 as usize;
+                        let p2 = p2 as usize;
+                        let p3 = p3 as usize;
+                        let p4 = p4 as usize;
+                        (p1, p2, p3, p4)
+                    }
+                    Some(_) => {
+                        panic!("more pads than expected in conv2d {pads:?} {}", self.name())
+                    }
+                    None => (0, 0, 0, 0),
+                };
+                let stride = match strides {
+                    None => 1,
+                    Some([p]) => *p as usize,
+                    Some([p1, p2]) => {
+                        if p1 != p2 {
+                            panic!(
+                                "strides have to be the same on both axis {pads:?} {}",
+                                self.name()
+                            )
+                        }
+                        *p1 as usize
+                    }
+                    Some(s) => {
+                        panic!("more strides than expected in conv2d {s:?} {}", self.name())
+                    }
+                };
+                let dilation = match dilations {
+                    None => 1,
+                    Some([p]) => *p as usize,
+                    Some([p1, p2]) => {
+                        if p1 != p2 {
+                            panic!(
+                                "dilations have to be the same on both axis {pads:?} {}",
+                                self.name()
+                            )
+                        }
+                        *p1 as usize
+                    }
+                    Some(s) => {
+                        panic!(
+                            "more dilations than expected in conv2d {s:?} {}",
+                            self.name()
+                        )
+                    }
+                };
+                let auto_pad = self.get_attr_pro::<str>("auto_pad");
+                match auto_pad {
+                    None | Some("NOTSET") => (),
+                    Some(s) => panic!("unsupported auto_pad {s}"),
+                };
+                Op::Conv(Conv2D(Conv2DParam::new(
+                    pads,
+                    stride,
+                    dilation,
+                    groups as usize,
+                )))
             }
             "Relu" => Op::Relu,
             "MaxPool" => {
@@ -564,7 +568,6 @@ mod op_tests {
         let mut buf_reader = BufReader::new(file);
         let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
         let t3: Value = m.parse_mut().unwrap();
-        //    let t33 = t3_output.pop().unwrap();
 
         println!("t3:{:?}\n", t3);
         println!("t3_output:{:?}", output[0].as_value_ref().as_tensor());

@@ -116,6 +116,14 @@ impl AttributeProto {
         }
     }
 
+    pub fn str(&self) -> &[u8] {
+        match self.s.as_ref() {
+            Some(v) => v,
+            None => &[],
+        }
+    }
+
+
     pub fn clear_name(&mut self) {
         self.name = ::std::option::Option::None;
     }
@@ -941,12 +949,14 @@ impl Attr for [f32] {
     }
 }
 
-// impl Attr for str {
-//     fn get(attr: &AttributeProto) -> Option<&Self> {
-//         let s = attr.s?;
-//         std::str::from_utf8(s).map_or(default, f)
-//     }
-// }
+impl Attr for str {
+    fn get(attr: &AttributeProto) -> Option<&Self> {
+        std::str::from_utf8(&attr.str()).ok()
+    }
+}
+
+
+
 
 
 impl NodeProto {
@@ -954,16 +964,9 @@ impl NodeProto {
         ::std::default::Default::default()
     }
 
-    // optional string name = 3;
-
     pub fn get_attribute(&self) -> &[AttributeProto] {
         &self.attribute
     }
-
-    // pub fn get_attr_pro(&self, name: &str) -> Option<&AttributeProto> {
-    //    self.get_attribute().iter().find(|a| a.name() == name)
-    // }
-
 
     pub(crate) fn get_attr_pro<'a, T:Attr+ ?Sized>(&'a self, name: &str) -> Option<&'a T> {
        let attr =  self.get_attribute().iter().find(|a| a.name() == name)?;
@@ -977,6 +980,7 @@ impl NodeProto {
         }
     }
 
+ 
     pub fn clear_name(&mut self) {
         self.name = ::std::option::Option::None;
     }

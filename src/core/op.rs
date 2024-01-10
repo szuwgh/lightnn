@@ -2,7 +2,6 @@ use super::tensor::{Tensor, Value};
 use crate::core::tensor::Tensors;
 use crate::util::error::LNError;
 use crate::util::error::LNResult;
-use galois::shape::Dim;
 use galois::DTensor;
 use galois::Tensor as GTensor;
 use galois::TensorType;
@@ -13,7 +12,7 @@ use smallvec::smallvec;
 pub(crate) enum Op {
     Add,
     Reshape,
-    Conv,
+    Conv(Conv2D),
     Relu, //
     MaxPool(MaxPool2D),
     MatMul,
@@ -105,58 +104,87 @@ fn relu(inputs: Tensors) -> LNResult<Tensor> {
 
 trait Map2 {
     const OP: &'static str;
-    fn f<T: TensorType>(&self, src: &[T], shape: &Dim, k: &[T], shape_k: &Dim) -> LNResult<Vec<T>>;
+    fn f<T: TensorType>(&self, t: &DTensor<T>, w: &DTensor<T>) -> LNResult<Vec<T>>;
 
-    fn map(&self, inp1: Tensor, inp2: Tensor, new_dim: Shape) -> LNResult<GTensor> {
+    fn out_shape<T: TensorType>(&self, t1: &DTensor<T>, t1: &DTensor<T>) -> LNResult<Shape>;
+
+    fn map(&self, inp1: Tensor, inp2: Tensor) -> LNResult<GTensor> {
         let (t1, t2) = (
             inp1.as_value_ref().as_tensor(),
             inp2.as_value_ref().as_tensor(),
         );
         match (t1, t2) {
-            (GTensor::U8(dt1), GTensor::U8(dt2)) => Ok(GTensor::U8(DTensor::with_shape(
-                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
-                new_dim,
-            ))),
-            (GTensor::I8(dt1), GTensor::I8(dt2)) => Ok(GTensor::I8(DTensor::with_shape(
-                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
-                new_dim,
-            ))),
-            (GTensor::I16(dt1), GTensor::I16(dt2)) => Ok(GTensor::I16(DTensor::with_shape(
-                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
-                new_dim,
-            ))),
-            (GTensor::U16(dt1), GTensor::U16(dt2)) => Ok(GTensor::U16(DTensor::with_shape(
-                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
-                new_dim,
-            ))),
-            (GTensor::I32(dt1), GTensor::I32(dt2)) => Ok(GTensor::I32(DTensor::with_shape(
-                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
-                new_dim,
-            ))),
-            (GTensor::U32(dt1), GTensor::U32(dt2)) => Ok(GTensor::U32(DTensor::with_shape(
-                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
-                new_dim,
-            ))),
-            (GTensor::I64(dt1), GTensor::I64(dt2)) => Ok(GTensor::I64(DTensor::with_shape(
-                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
-                new_dim,
-            ))),
-            (GTensor::U64(dt1), GTensor::U64(dt2)) => Ok(GTensor::U64(DTensor::with_shape(
-                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
-                new_dim,
-            ))),
-            (GTensor::F16(dt1), GTensor::F16(dt2)) => Ok(GTensor::F16(DTensor::with_shape(
-                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
-                new_dim,
-            ))),
-            (GTensor::F32(dt1), GTensor::F32(dt2)) => Ok(GTensor::F32(DTensor::with_shape(
-                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
-                new_dim,
-            ))),
-            (GTensor::F64(dt1), GTensor::F64(dt2)) => Ok(GTensor::F64(DTensor::with_shape(
-                self.f(dt1.as_slice(), dt1.dim(), dt2.as_slice(), dt2.dim())?,
-                new_dim,
-            ))),
+            (GTensor::U8(dt1), GTensor::U8(dt2)) => {
+                let new_dim = self.out_shape(dt1, dt2)?;
+                Ok(GTensor::U8(DTensor::with_shape(self.f(dt1, dt2)?, new_dim)))
+            }
+            (GTensor::I8(dt1), GTensor::I8(dt2)) => {
+                let new_dim = self.out_shape(dt1, dt2)?;
+                Ok(GTensor::I8(DTensor::with_shape(self.f(dt1, dt2)?, new_dim)))
+            }
+            (GTensor::I16(dt1), GTensor::I16(dt2)) => {
+                let new_dim = self.out_shape(dt1, dt2)?;
+                Ok(GTensor::I16(DTensor::with_shape(
+                    self.f(dt1, dt2)?,
+                    new_dim,
+                )))
+            }
+            (GTensor::U16(dt1), GTensor::U16(dt2)) => {
+                let new_dim = self.out_shape(dt1, dt2)?;
+                Ok(GTensor::U16(DTensor::with_shape(
+                    self.f(dt1, dt2)?,
+                    new_dim,
+                )))
+            }
+            (GTensor::I32(dt1), GTensor::I32(dt2)) => {
+                let new_dim = self.out_shape(dt1, dt2)?;
+                Ok(GTensor::I32(DTensor::with_shape(
+                    self.f(dt1, dt2)?,
+                    new_dim,
+                )))
+            }
+            (GTensor::U32(dt1), GTensor::U32(dt2)) => {
+                let new_dim = self.out_shape(dt1, dt2)?;
+                Ok(GTensor::U32(DTensor::with_shape(
+                    self.f(dt1, dt2)?,
+                    new_dim,
+                )))
+            }
+            (GTensor::I64(dt1), GTensor::I64(dt2)) => {
+                let new_dim = self.out_shape(dt1, dt2)?;
+                Ok(GTensor::I64(DTensor::with_shape(
+                    self.f(dt1, dt2)?,
+                    new_dim,
+                )))
+            }
+            (GTensor::U64(dt1), GTensor::U64(dt2)) => {
+                let new_dim = self.out_shape(dt1, dt2)?;
+                Ok(GTensor::U64(DTensor::with_shape(
+                    self.f(dt1, dt2)?,
+                    new_dim,
+                )))
+            }
+            (GTensor::F16(dt1), GTensor::F16(dt2)) => {
+                let new_dim = self.out_shape(dt1, dt2)?;
+                Ok(GTensor::F16(DTensor::with_shape(
+                    self.f(dt1, dt2)?,
+                    new_dim,
+                )))
+            }
+            (GTensor::F32(dt1), GTensor::F32(dt2)) => {
+                let new_dim = self.out_shape(dt1, dt2)?;
+                Ok(GTensor::F32(DTensor::with_shape(
+                    self.f(dt1, dt2)?,
+                    new_dim,
+                )))
+            }
+            (GTensor::F64(dt1), GTensor::F64(dt2)) => {
+                let new_dim = self.out_shape(dt1, dt2)?;
+                Ok(GTensor::F64(DTensor::with_shape(
+                    self.f(dt1, dt2)?,
+                    new_dim,
+                )))
+            }
             _ => Err(LNError::DTypeMismatchBinaryOp {
                 lhs: t1.dtype(),
                 rhs: t2.dtype(),
@@ -167,54 +195,56 @@ trait Map2 {
 }
 
 trait Map {
-    fn f<T: TensorType>(&self, src: &[T], shape: &Dim) -> LNResult<Vec<T>>;
+    fn f<T: TensorType>(&self, t: &DTensor<T>) -> LNResult<Vec<T>>;
 
-    fn map(&self, t: Tensor, new_dim: Shape) -> LNResult<GTensor> {
+    fn out_shape<T: TensorType>(&self, t: &DTensor<T>) -> LNResult<Shape>;
+
+    fn map(&self, t: Tensor) -> LNResult<GTensor> {
         let new_t = match t.as_value_ref().as_tensor() {
-            GTensor::U8(t1) => GTensor::U8(DTensor::with_shape(
-                self.f(t1.as_slice(), t1.dim())?,
-                new_dim,
-            )),
-            GTensor::I8(t1) => GTensor::I8(DTensor::with_shape(
-                self.f(t1.as_slice(), t1.dim())?,
-                new_dim,
-            )),
-            GTensor::I16(t1) => GTensor::I16(DTensor::with_shape(
-                self.f(t1.as_slice(), t1.dim())?,
-                new_dim,
-            )),
-            GTensor::U16(t1) => GTensor::U16(DTensor::with_shape(
-                self.f(t1.as_slice(), t1.dim())?,
-                new_dim,
-            )),
-            GTensor::I32(t1) => GTensor::I32(DTensor::with_shape(
-                self.f(t1.as_slice(), t1.dim())?,
-                new_dim,
-            )),
-            GTensor::U32(t1) => GTensor::U32(DTensor::with_shape(
-                self.f(t1.as_slice(), t1.dim())?,
-                new_dim,
-            )),
-            GTensor::I64(t1) => GTensor::I64(DTensor::with_shape(
-                self.f(t1.as_slice(), t1.dim())?,
-                new_dim,
-            )),
-            GTensor::U64(t1) => GTensor::U64(DTensor::with_shape(
-                self.f(t1.as_slice(), t1.dim())?,
-                new_dim,
-            )),
-            GTensor::F16(t1) => GTensor::F16(DTensor::with_shape(
-                self.f(t1.as_slice(), t1.dim())?,
-                new_dim,
-            )),
-            GTensor::F32(t1) => GTensor::F32(DTensor::with_shape(
-                self.f(t1.as_slice(), t1.dim())?,
-                new_dim,
-            )),
-            GTensor::F64(t1) => GTensor::F64(DTensor::with_shape(
-                self.f(t1.as_slice(), t1.dim())?,
-                new_dim,
-            )),
+            GTensor::U8(t1) => {
+                let new_dim = self.out_shape(t1)?;
+                GTensor::U8(DTensor::with_shape(self.f(t1)?, new_dim))
+            }
+            GTensor::I8(t1) => {
+                let new_dim = self.out_shape(t1)?;
+                GTensor::I8(DTensor::with_shape(self.f(t1)?, new_dim))
+            }
+            GTensor::I16(t1) => {
+                let new_dim = self.out_shape(t1)?;
+                GTensor::I16(DTensor::with_shape(self.f(t1)?, new_dim))
+            }
+            GTensor::U16(t1) => {
+                let new_dim = self.out_shape(t1)?;
+                GTensor::U16(DTensor::with_shape(self.f(t1)?, new_dim))
+            }
+            GTensor::I32(t1) => {
+                let new_dim = self.out_shape(t1)?;
+                GTensor::I32(DTensor::with_shape(self.f(t1)?, new_dim))
+            }
+            GTensor::U32(t1) => {
+                let new_dim = self.out_shape(t1)?;
+                GTensor::U32(DTensor::with_shape(self.f(t1)?, new_dim))
+            }
+            GTensor::I64(t1) => {
+                let new_dim = self.out_shape(t1)?;
+                GTensor::I64(DTensor::with_shape(self.f(t1)?, new_dim))
+            }
+            GTensor::U64(t1) => {
+                let new_dim = self.out_shape(t1)?;
+                GTensor::U64(DTensor::with_shape(self.f(t1)?, new_dim))
+            }
+            GTensor::F16(t1) => {
+                let new_dim = self.out_shape(t1)?;
+                GTensor::F16(DTensor::with_shape(self.f(t1)?, new_dim))
+            }
+            GTensor::F32(t1) => {
+                let new_dim = self.out_shape(t1)?;
+                GTensor::F32(DTensor::with_shape(self.f(t1)?, new_dim))
+            }
+            GTensor::F64(t1) => {
+                let new_dim = self.out_shape(t1)?;
+                GTensor::F64(DTensor::with_shape(self.f(t1)?, new_dim))
+            }
         };
         Ok(new_t)
     }
@@ -231,17 +261,23 @@ pub(crate) struct MaxPool2D(pub(crate) (usize, usize), pub(crate) (usize, usize)
 impl MaxPool2D {
     pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
         let a1 = args_1(inputs);
-        let (kernel_size, stride) = (self.0, self.1);
-        let (n, c, h, w) = a1.as_value_ref().as_tensor().shape().dims4();
-        let h_out = (h - kernel_size.0) / stride.0 + 1;
-        let w_out = (w - kernel_size.1) / stride.1 + 1;
-        let new_shape = Shape::from_array([n, c, h_out, w_out]);
-        Ok(Tensor::Own(Value(self.map(a1, new_shape)?)))
+        Ok(Tensor::Own(Value(self.map(a1)?)))
     }
 }
 
 impl Map for MaxPool2D {
-    fn f<T: TensorType>(&self, src: &[T], shape: &Dim) -> LNResult<Vec<T>> {
+    fn out_shape<T: TensorType>(&self, t: &DTensor<T>) -> LNResult<Shape> {
+        let (kernel_size, stride) = (self.0, self.1);
+        let (n, c, h, w) = t.shape().dims4();
+        let h_out = (h - kernel_size.0) / stride.0 + 1;
+        let w_out = (w - kernel_size.1) / stride.1 + 1;
+        let new_shape = Shape::from_array([n, c, h_out, w_out]);
+        Ok(new_shape)
+    }
+
+    fn f<T: TensorType>(&self, t: &DTensor<T>) -> LNResult<Vec<T>> {
+        let src = t.as_slice();
+        let shape = t.dim();
         // https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html
         let (k_h, k_w) = self.0;
         let (s_h, s_w) = self.1;
@@ -307,12 +343,76 @@ impl ParamsConv2D {
     }
 }
 
-struct Conv2DImpl(ParamsConv2D);
+#[derive(Debug)]
+pub(crate) struct Conv2D(pub(crate) Conv2DParam);
 
-impl Map2 for Conv2DImpl {
+impl Map2 for Conv2D {
     const OP: &'static str = "conv2d";
-    fn f<T: TensorType>(&self, inp: &[T], inp_d: &Dim, k: &[T], k_d: &Dim) -> LNResult<Vec<T>> {
-        let p = &self.0;
+
+    fn out_shape<T: TensorType>(&self, t1: &DTensor<T>, t2: &DTensor<T>) -> LNResult<Shape> {
+        let (b_size, c_in, i_h, i_w) = t1.shape().dims4();
+        let (c_out, c_in_k, k_h, k_w) = t2.shape().dims4();
+        let groups = self.0.groups;
+        if c_in != c_in_k * groups {
+            panic!("in_channel mismatch between input")
+        }
+        let (p1, p2, p3, p4) = (self.0.pads.0, self.0.pads.1, self.0.pads.2, self.0.pads.3);
+        let padding = if p1 != p2 || p1 != p3 || p1 != p4 {
+            0
+        } else {
+            p1
+        };
+        let p = ParamsConv2D {
+            b_size: b_size,
+            i_h: i_h,
+            i_w: i_w,
+            k_h: k_h,
+            k_w: k_w,
+            c_out: c_out / groups,
+            c_in: c_in / groups,
+            padding: padding,
+            stride: self.0.stride,
+            dilation: self.0.dilation,
+        };
+        let new_shape = p.out_dims();
+        Ok(Shape::from_vec(new_shape))
+    }
+
+    fn f<T: TensorType>(&self, t: &DTensor<T>, w: &DTensor<T>) -> LNResult<Vec<T>> {
+        let (p1, p2, p3, p4) = (self.0.pads.0, self.0.pads.1, self.0.pads.2, self.0.pads.3);
+
+        let (padding, t1) = if p1 != p2 || p1 != p3 || p1 != p4 {
+            (0, t.pad(2, p1, p3, T::zero())?.pad(3, p2, p4, T::zero())?)
+        } else {
+            (p1, t.view())
+        };
+
+        let (b_size, c_in, i_h, i_w) = t.shape().dims4();
+        let (c_out, c_in_k, k_h, k_w) = w.shape().dims4();
+        let groups = self.0.groups;
+        if c_in != c_in_k * groups {
+            panic!("in_channel mismatch between input")
+        }
+        let (p1, p2, p3, p4) = (self.0.pads.0, self.0.pads.1, self.0.pads.2, self.0.pads.3);
+        let padding = if p1 != p2 || p1 != p3 || p1 != p4 {
+            0
+        } else {
+            p1
+        };
+        let p = ParamsConv2D {
+            b_size: b_size,
+            i_h: i_h,
+            i_w: i_w,
+            k_h: k_h,
+            k_w: k_w,
+            c_out: c_out / groups,
+            c_in: c_in / groups,
+            padding: padding,
+            stride: self.0.stride,
+            dilation: self.0.dilation,
+        };
+
+        let (inp, inp_d, k, k_d) = (t.as_slice(), t.dim(), w.as_slice(), w.dim());
 
         let (inp_s0, inp_s1, inp_s2, inp_s3) = galois::shape::dims4(inp_d.stride());
         let (k_s0, k_s1, k_s2, k_s3) = galois::shape::dims4(k_d.stride());
@@ -394,44 +494,37 @@ impl Map2 for Conv2DImpl {
     }
 }
 
-struct Conv2DParam {
-    padding: usize,
+#[derive(Debug)]
+pub(crate) struct Conv2DParam {
+    pads: (usize, usize, usize, usize),
     stride: usize,
     dilation: usize,
     groups: usize,
 }
 
-struct Conv2D(Conv2DParam);
+impl Conv2DParam {
+    pub(crate) fn new(
+        pads: (usize, usize, usize, usize),
+        stride: usize,
+        dilation: usize,
+        groups: usize,
+    ) -> Conv2DParam {
+        Self {
+            pads,
+            stride,
+            dilation,
+            groups,
+        }
+    }
+}
+
+// #[derive(Debug)]
+// pub(crate) struct Conv2D(pub(crate) Conv2DParam);
 
 impl Conv2D {
     pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
         let (a1, a2) = args_2(inputs);
-        let (t1, t2) = (a1.as_value_ref().as_tensor(), a2.as_value_ref().as_tensor());
-
-        let (b_size, c_in, i_h, i_w) = t1.shape().dims4();
-        let (c_out, c_in_k, k_h, k_w) = t2.shape().dims4();
-        let groups = self.0.groups;
-        if c_in != c_in_k * groups {
-            panic!("in_channel mismatch between input")
-        }
-        let p = ParamsConv2D {
-            b_size: b_size,
-            i_h: i_h,
-            i_w: i_w,
-            k_h: k_h,
-            k_w: k_w,
-            c_out: c_out / groups,
-            c_in: c_in / groups,
-            padding: self.0.padding,
-            stride: self.0.stride,
-            dilation: self.0.dilation,
-        };
-        let new_dim = p.out_dims();
-        Ok(Tensor::Own(Value(Conv2DImpl(p).map(
-            a1,
-            a2,
-            Shape::from_vec(new_dim),
-        )?)))
+        Ok(Tensor::Own(Value(self.map(a1, a2)?)))
     }
 }
 

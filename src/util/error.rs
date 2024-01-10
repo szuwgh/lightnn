@@ -5,6 +5,7 @@ use std::io;
 use std::io::Error as IOError;
 use thiserror::Error;
 pub type LNResult<T> = Result<T, LNError>;
+use galois::error::GError;
 use galois::DType;
 #[derive(Error, Debug)]
 pub enum LNError {
@@ -26,6 +27,8 @@ pub enum LNError {
         rhs: DType,
         op: &'static str,
     },
+    #[error("galois tensor error:: {0}")]
+    GTensorError(GError),
 }
 
 impl From<&str> for LNError {
@@ -67,5 +70,11 @@ impl From<LNError> for String {
 impl From<Utf8Error> for LNError {
     fn from(e: Utf8Error) -> Self {
         LNError::Unexpected(e.to_string())
+    }
+}
+
+impl From<GError> for LNError {
+    fn from(e: GError) -> Self {
+        LNError::GTensorError(e)
     }
 }
