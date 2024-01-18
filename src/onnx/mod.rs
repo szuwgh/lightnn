@@ -473,7 +473,7 @@ mod op_tests {
     }
 
     #[test]
-    fn test_op_add() {
+    fn test_add() {
         let (inputs, output) = input2("test_add");
         let op: Op = Op::Add;
         let mut t3_output = op.infer(inputs).unwrap();
@@ -486,7 +486,7 @@ mod op_tests {
     }
 
     #[test]
-    fn test_op_reshape() {
+    fn test_reshape_extended_dims() {
         let (inputs, output) = input2("test_reshape_extended_dims");
         let op: Op = Op::Reshape;
         let mut t3_output = op.infer(inputs).unwrap();
@@ -499,7 +499,7 @@ mod op_tests {
     }
 
     #[test]
-    fn test_op_relu() {
+    fn test_relu() {
         let (inputs, output) = input1("test_relu");
         let op: Op = Op::Relu;
         let mut t3_output = op.infer(inputs).unwrap();
@@ -512,19 +512,10 @@ mod op_tests {
     }
 
     #[test]
-    fn test_op_maxpool_2d_default() {
-        let input0 = PathBuf::from(TEST_DATA_PATH)
-            .join("test_maxpool_2d_default/test_data_set_0/input_0.pb");
-        let output0 = PathBuf::from(TEST_DATA_PATH)
-            .join("test_maxpool_2d_default/test_data_set_0/output_0.pb");
+    fn test_maxpool_2d_default() {
+        let (inputs, output) = input1("test_maxpool_2d_default");
 
         let model = PathBuf::from(TEST_DATA_PATH).join("test_maxpool_2d_default/model.onnx");
-        let file = File::open(input0).unwrap();
-        let mut buf_reader = BufReader::new(file);
-
-        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
-        let t1 = Tensor::Own(m.parse_mut().unwrap());
-        println!("t1:{:?}\n", t1);
 
         let file = File::open(model).unwrap();
         let mut buf_reader = BufReader::new(file);
@@ -533,45 +524,109 @@ mod op_tests {
 
         let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
 
-        let output = op.infer(smallvec![t1]).unwrap();
+        let mut infer_output = op.infer(inputs).unwrap();
 
-        let file = File::open(output0).unwrap();
-        let mut buf_reader = BufReader::new(file);
-        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
-        let t3: Value = m.parse_mut().unwrap();
+        let infer = infer_output.pop().unwrap();
 
-        println!("t3:{:?}\n", t3);
-        println!("t3_output:{:?}", output[0].as_value_ref().as_tensor());
-        assert!(*(output[0].as_value_ref().as_tensor()) == *t3.as_tensor());
-        println!("pass maxpool_2d_default success")
+        // println!("t3:{:?}", output);
+        //  println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
+        assert!(*(infer.as_value_ref().as_tensor()) == *output.as_tensor());
+        println!("pass maxpool_2d_default / {:?} success", op);
     }
 
     #[test]
-    fn test_op_maxpool_2d_strides() {
-        let input0 = PathBuf::from(TEST_DATA_PATH)
-            .join("test_maxpool_2d_strides/test_data_set_0/input_0.pb");
-        let output0 = PathBuf::from(TEST_DATA_PATH)
-            .join("test_maxpool_2d_strides/test_data_set_0/output_0.pb");
+    fn test_maxpool_2d_strides() {
+        let (inputs, output) = input1("test_maxpool_2d_strides");
 
         let model = PathBuf::from(TEST_DATA_PATH).join("test_maxpool_2d_strides/model.onnx");
-        let file = File::open(input0).unwrap();
-        let mut buf_reader = BufReader::new(file);
-        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
-        let t1 = Tensor::Own(m.parse_mut().unwrap());
-        println!("t1:{:?}\n", t1);
+
         let file = File::open(model).unwrap();
         let mut buf_reader = BufReader::new(file);
-        let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
-        let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
-        let output = op.infer(smallvec![t1]).unwrap();
-        let file = File::open(output0).unwrap();
-        let mut buf_reader = BufReader::new(file);
-        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
-        let t3: Value = m.parse_mut().unwrap();
 
-        println!("t3:{:?}\n", t3);
-        println!("t3_output:{:?}", output[0].as_value_ref().as_tensor());
-        assert!(*(output[0].as_value_ref().as_tensor()) == *t3.as_tensor());
-        println!("pass maxpool_2d_strides success")
+        let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
+
+        let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
+
+        let mut infer_output = op.infer(inputs).unwrap();
+
+        let infer = infer_output.pop().unwrap();
+
+        // println!("t3:{:?}", output);
+        //  println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
+        assert!(*(infer.as_value_ref().as_tensor()) == *output.as_tensor());
+        println!("pass maxpool_2d_strides / {:?} success", op);
+    }
+
+    #[test]
+    fn test_conv_with_strides_and_asymmetric_padding() {
+        let (inputs, output) = input2("test_conv_with_strides_and_asymmetric_padding");
+
+        let model = PathBuf::from(TEST_DATA_PATH)
+            .join("test_conv_with_strides_and_asymmetric_padding/model.onnx");
+
+        let file = File::open(model).unwrap();
+        let mut buf_reader = BufReader::new(file);
+
+        let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
+
+        let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
+        println!("op:{:?} ", op);
+        println!("input:{:?}", inputs[1].as_value_ref().as_tensor().shape());
+        let mut infer_output = op.infer(inputs).unwrap();
+
+        let infer = infer_output.pop().unwrap();
+
+        assert!(*(infer.as_value_ref().as_tensor()) == *output.as_tensor());
+        println!(
+            "pass test_conv_with_strides_and_asymmetric_padding / {:?} success",
+            op
+        );
+    }
+
+    #[test]
+    fn test_conv_with_strides_no_padding() {
+        let (inputs, output) = input2("test_conv_with_strides_no_padding");
+
+        let model =
+            PathBuf::from(TEST_DATA_PATH).join("test_conv_with_strides_no_padding/model.onnx");
+
+        let file = File::open(model).unwrap();
+        let mut buf_reader = BufReader::new(file);
+
+        let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
+
+        let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
+
+        let mut infer_output = op.infer(inputs).unwrap();
+
+        let infer = infer_output.pop().unwrap();
+
+        // println!("t3:{:?}", output);
+        //  println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
+        assert!(*(infer.as_value_ref().as_tensor()) == *output.as_tensor());
+        println!("pass test_conv_with_strides_no_padding / {:?} success", op);
+    }
+
+    #[test]
+    fn test_conv_with_strides_padding() {
+        let (inputs, output) = input2("test_conv_with_strides_padding");
+
+        let model = PathBuf::from(TEST_DATA_PATH).join("test_conv_with_strides_padding/model.onnx");
+
+        let file = File::open(model).unwrap();
+        let mut buf_reader = BufReader::new(file);
+
+        let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
+
+        let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
+
+        let mut infer_output = op.infer(inputs).unwrap();
+
+        let infer = infer_output.pop().unwrap();
+
+        // println!("t3:{:?}", output);
+        // println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
+        assert!(*(infer.as_value_ref().as_tensor()) == *output.as_tensor());
+        println!("pass test_conv_with_strides_padding / {:?} success", op);
     }
 }
