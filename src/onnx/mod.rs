@@ -226,14 +226,19 @@ impl onnx::NodeProto {
 
     pub(crate) fn get_op(&self) -> LNResult<Op> {
         let op = match self.op_type() {
-            "Add" => Op::Add,
-            "Reshape" => Op::Reshape,
+            "Add" => Op::Add(Add::default()),
+            "Reshape" => Op::Reshape(Reshape::default()),
             "Conv" => {
                 let dilations = self.get_attr_pro::<[i64]>("dilations");
                 let groups = self.get_attr_pro::<i64>("group").copied().unwrap_or(1);
                 let _kernel_shape = self.get_attr_pro::<[i64]>("kernel_shape");
                 let pads = self.get_attr_pro::<[i64]>("pads");
                 let strides = self.get_attr_pro::<[i64]>("strides");
+                let auto_pad = self.get_attr_pro::<str>("auto_pad");
+                match auto_pad {
+                    None | Some("NOTSET") => (),
+                    Some(s) => panic!("unsupported auto_pad {s}"),
+                };
                 let pads = match pads {
                     Some(&[p1, p2, p3, p4]) => {
                         let p1 = p1 as usize;
@@ -282,11 +287,7 @@ impl onnx::NodeProto {
                         )
                     }
                 };
-                let auto_pad = self.get_attr_pro::<str>("auto_pad");
-                match auto_pad {
-                    None | Some("NOTSET") => (),
-                    Some(s) => panic!("unsupported auto_pad {s}"),
-                };
+
                 Op::Conv(Conv2D(Conv2DParam::new(
                     pads,
                     stride,
@@ -294,7 +295,7 @@ impl onnx::NodeProto {
                     groups as usize,
                 )))
             }
-            "Relu" => Op::Relu,
+            "Relu" => Op::Relu(Relu::default()),
             "MaxPool" => {
                 let kernel_shape = self
                     .get_attr_pro::<[i64]>("kernel_shape")
@@ -320,8 +321,8 @@ impl onnx::NodeProto {
                 let max_pool = MaxPool2D((k1, k2), (s1, s2));
                 Op::MaxPool(max_pool)
             }
-            "MatMul" => Op::MatMul,
-            _ => Op::Empty,
+            "MatMul" => Op::MatMul(MatMul::default()),
+            _ => panic!("not suppert op node {}", self.op_type()),
         };
         Ok(op)
     }
@@ -373,7 +374,7 @@ mod tests {
 
     #[test]
     fn test_read_model() {
-        let m = load("/opt/rsproject/gptgrep/lightnn/model/mnist-8.onnx").unwrap();
+        let m = load("/opt/rsproject/gptgrep/lightnn/model/mobilenetv2-7.onnx").unwrap();
 
         println!("version:{}", m.ir_version.unwrap());
         for input in m.get_graph().get_input() {
@@ -424,7 +425,6 @@ mod op_tests {
     use std::io::BufReader;
     use std::path::PathBuf;
     const TEST_DATA_PATH: &str = "./test_data/node";
-    use crate::core::op::Op;
     use crate::core::tensor::Tensors;
 
     fn input1(op: &str) -> (Tensors, Value) {
@@ -463,170 +463,107 @@ mod op_tests {
         let mut buf_reader = BufReader::new(file);
         let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
         let t2 = Tensor::Own(m.parse_mut().unwrap());
+        println!("t1{:?}", t1.as_value_ref().as_tensor_ref());
+        println!("t2{:?}", t2.as_value_ref().as_tensor_ref());
 
         let file = File::open(output0).unwrap();
         let mut buf_reader = BufReader::new(file);
         let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
         let t3: Value = m.parse_mut().unwrap();
+        println!("t3{:?}", t3.as_tensor_ref());
 
         (smallvec![t1, t2], t3)
     }
 
-    #[test]
-    fn test_add() {
-        let (inputs, output) = input2("test_add");
-        let op: Op = Op::Add;
+    fn input2_infer(test_op: &str) {
+        let (inputs, output) = input2(test_op);
+        let model = PathBuf::from(TEST_DATA_PATH).join(format!("{}/{}", test_op, "model.onnx"));
+        let file = File::open(model).unwrap();
+        let mut buf_reader = BufReader::new(file);
+        let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
+        let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
+        let mut t3_output = op.infer(inputs).unwrap();
+        let t33 = t3_output.pop().unwrap();
+        println!("infer output{:?}", t33.as_value_ref().as_tensor_ref());
+        assert!(*(t33.as_value_ref().as_tensor_ref()) == *output.as_tensor_ref());
+        println!("pass {} success", test_op);
+    }
+
+    fn input1_infer(test_op: &str) {
+        let (inputs, output) = input1(test_op);
+        let model = PathBuf::from(TEST_DATA_PATH).join(format!("{}/{}", test_op, "model.onnx"));
+        let file = File::open(model).unwrap();
+        let mut buf_reader = BufReader::new(file);
+        let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
+        let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
         let mut t3_output = op.infer(inputs).unwrap();
         let t33 = t3_output.pop().unwrap();
 
-        println!("output:{:?}\n", output);
-        println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
-        assert!(*(t33.as_value_ref().as_tensor()) == *output.as_tensor());
-        println!("pass add success");
+        assert!(*(t33.as_value_ref().as_tensor_ref()) == *output.as_tensor_ref());
+        println!("pass {} success", test_op);
+    }
+    #[test]
+    fn test_add() {
+        input2_infer("test_add");
     }
 
     #[test]
     fn test_reshape_extended_dims() {
-        let (inputs, output) = input2("test_reshape_extended_dims");
-        let op: Op = Op::Reshape;
-        let mut t3_output = op.infer(inputs).unwrap();
-        let t33 = t3_output.pop().unwrap();
+        input2_infer("test_reshape_extended_dims");
+    }
 
-        println!("output:{:?}\n", output);
-        println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
-        assert!(*(t33.as_value_ref().as_tensor()) == *output.as_tensor());
-        println!("pass reshape success")
+    #[test]
+    fn test_reshape_allowzero_reordered() {
+        input2_infer("test_reshape_allowzero_reordered");
     }
 
     #[test]
     fn test_relu() {
-        let (inputs, output) = input1("test_relu");
-        let op: Op = Op::Relu;
-        let mut t3_output = op.infer(inputs).unwrap();
-        let t33 = t3_output.pop().unwrap();
-
-        println!("t3:{:?}", output);
-        println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
-        assert!(*(t33.as_value_ref().as_tensor()) == *output.as_tensor());
-        println!("pass relu success")
+        input1_infer("test_relu");
     }
 
     #[test]
     fn test_maxpool_2d_default() {
-        let (inputs, output) = input1("test_maxpool_2d_default");
-
-        let model = PathBuf::from(TEST_DATA_PATH).join("test_maxpool_2d_default/model.onnx");
-
-        let file = File::open(model).unwrap();
-        let mut buf_reader = BufReader::new(file);
-
-        let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
-
-        let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
-
-        let mut infer_output = op.infer(inputs).unwrap();
-
-        let infer = infer_output.pop().unwrap();
-
-        // println!("t3:{:?}", output);
-        //  println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
-        assert!(*(infer.as_value_ref().as_tensor()) == *output.as_tensor());
-        println!("pass maxpool_2d_default / {:?} success", op);
+        input1_infer("test_maxpool_2d_default");
     }
 
     #[test]
     fn test_maxpool_2d_strides() {
-        let (inputs, output) = input1("test_maxpool_2d_strides");
-
-        let model = PathBuf::from(TEST_DATA_PATH).join("test_maxpool_2d_strides/model.onnx");
-
-        let file = File::open(model).unwrap();
-        let mut buf_reader = BufReader::new(file);
-
-        let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
-
-        let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
-
-        let mut infer_output = op.infer(inputs).unwrap();
-
-        let infer = infer_output.pop().unwrap();
-
-        // println!("t3:{:?}", output);
-        //  println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
-        assert!(*(infer.as_value_ref().as_tensor()) == *output.as_tensor());
-        println!("pass maxpool_2d_strides / {:?} success", op);
+        input1_infer("test_maxpool_2d_strides");
     }
 
     #[test]
     fn test_conv_with_strides_and_asymmetric_padding() {
-        let (inputs, output) = input2("test_conv_with_strides_and_asymmetric_padding");
-
-        let model = PathBuf::from(TEST_DATA_PATH)
-            .join("test_conv_with_strides_and_asymmetric_padding/model.onnx");
-
-        let file = File::open(model).unwrap();
-        let mut buf_reader = BufReader::new(file);
-
-        let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
-
-        let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
-        println!("op:{:?} ", op);
-        println!("input:{:?}", inputs[1].as_value_ref().as_tensor().shape());
-        let mut infer_output = op.infer(inputs).unwrap();
-
-        let infer = infer_output.pop().unwrap();
-
-        assert!(*(infer.as_value_ref().as_tensor()) == *output.as_tensor());
-        println!(
-            "pass test_conv_with_strides_and_asymmetric_padding / {:?} success",
-            op
-        );
+        input2_infer("test_conv_with_strides_and_asymmetric_padding");
     }
 
     #[test]
     fn test_conv_with_strides_no_padding() {
-        let (inputs, output) = input2("test_conv_with_strides_no_padding");
+        input2_infer("test_conv_with_strides_no_padding");
+    }
 
-        let model =
-            PathBuf::from(TEST_DATA_PATH).join("test_conv_with_strides_no_padding/model.onnx");
-
-        let file = File::open(model).unwrap();
-        let mut buf_reader = BufReader::new(file);
-
-        let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
-
-        let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
-
-        let mut infer_output = op.infer(inputs).unwrap();
-
-        let infer = infer_output.pop().unwrap();
-
-        // println!("t3:{:?}", output);
-        //  println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
-        assert!(*(infer.as_value_ref().as_tensor()) == *output.as_tensor());
-        println!("pass test_conv_with_strides_no_padding / {:?} success", op);
+    #[test]
+    fn test_conv_with_autopad_same() {
+        input2_infer("test_conv_with_autopad_same");
     }
 
     #[test]
     fn test_conv_with_strides_padding() {
-        let (inputs, output) = input2("test_conv_with_strides_padding");
+        input2_infer("test_conv_with_strides_padding");
+    }
 
-        let model = PathBuf::from(TEST_DATA_PATH).join("test_conv_with_strides_padding/model.onnx");
+    #[test]
+    fn test_matmul_2d() {
+        input2_infer("test_matmul_2d");
+    }
 
-        let file = File::open(model).unwrap();
-        let mut buf_reader = BufReader::new(file);
+    #[test]
+    fn test_matmul_3d() {
+        input2_infer("test_matmul_3d");
+    }
 
-        let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
-
-        let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
-
-        let mut infer_output = op.infer(inputs).unwrap();
-
-        let infer = infer_output.pop().unwrap();
-
-        // println!("t3:{:?}", output);
-        // println!("t3_output:{:?}", t33.as_value_ref().as_tensor());
-        assert!(*(infer.as_value_ref().as_tensor()) == *output.as_tensor());
-        println!("pass test_conv_with_strides_padding / {:?} success", op);
+    #[test]
+    fn test_matmul_4d() {
+        input2_infer("test_matmul_4d");
     }
 }

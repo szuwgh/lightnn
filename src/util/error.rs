@@ -9,6 +9,8 @@ use galois::error::GError;
 use galois::DType;
 #[derive(Error, Debug)]
 pub enum LNError {
+    #[error("EmptyTensor")]
+    EmptyTensor,
     #[error("could not deserialize model: {0}")]
     ModelDeserializationError(#[from] ProtobufError),
     #[error("Unexpected io: {0}, {1}")]

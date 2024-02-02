@@ -30,14 +30,25 @@ impl Tensor {
             Tensor::Share(v) => v.as_ref(),
         }
     }
+
+    pub(crate) fn as_value(self) -> Value {
+        match self {
+            Tensor::Own(v) => v,
+            Tensor::Share(_) => panic!("not get share value"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct Value(pub(crate) GTensor);
 
 impl Value {
-    pub fn as_tensor(&self) -> &GTensor {
+    pub fn as_tensor_ref(&self) -> &GTensor {
         &self.0
+    }
+
+    pub fn as_tensor(self) -> GTensor {
+        self.0
     }
 
     pub fn from_raw(dim: Vec<usize>, raw: Vec<u8>, d: DType) -> Value {

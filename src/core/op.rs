@@ -3,19 +3,24 @@ use crate::core::tensor::Tensors;
 use crate::util::error::LNError;
 use crate::util::error::LNResult;
 use galois::DTensor;
+use galois::Shape;
 use galois::Tensor as GTensor;
 use galois::TensorType;
-use galois::{Shape, TensorValue};
+use galois::ToUsize;
 use rayon::prelude::*;
 use smallvec::smallvec;
+use std::default;
+use std::ops::Div;
+use std::ops::Sub;
 #[derive(Debug)]
 pub(crate) enum Op {
-    Add,
-    Reshape,
+    Add(Add),
+    Reshape(Reshape),
     Conv(Conv2D),
-    Relu, //
+    Relu(Relu), //
     MaxPool(MaxPool2D),
-    MatMul,
+    MatMul(MatMul),
+    BatchNormalization(),
     Empty,
 }
 
@@ -28,11 +33,11 @@ impl Default for Op {
 impl Op {
     pub(crate) fn infer(&self, inputs: Tensors) -> LNResult<Tensors> {
         match self {
-            Op::Add => Ok(smallvec![add(inputs)?]),
-            Op::Reshape => Ok(smallvec![reshape(inputs)?]),
-            Op::Relu => Ok(smallvec![relu(inputs)?]),
+            Op::Add(op) => Ok(smallvec![op.apply(inputs)?]),
+            Op::Reshape(op) => Ok(smallvec![op.apply(inputs)?]),
+            Op::Relu(op) => Ok(smallvec![op.apply(inputs)?]),
             Op::MaxPool(op) => Ok(smallvec![op.apply(inputs)?]),
-            Op::MatMul => Ok(smallvec![reshape(inputs)?]),
+            Op::MatMul(op) => Ok(smallvec![op.apply(inputs)?]),
             Op::Conv(op) => Ok(smallvec![op.apply(inputs)?]),
             _ => {
                 todo!()
@@ -41,127 +46,340 @@ impl Op {
     }
 }
 
-fn add(inputs: Tensors) -> LNResult<Tensor> {
-    let (a1, a2) = args_2(inputs);
-    let a3 = a1.as_value_ref().as_tensor() + a2.as_value_ref().as_tensor();
-    Ok(Tensor::Own(Value(a3)))
+#[derive(Debug, Default)]
+pub(crate) struct Add;
+
+impl Add {
+    pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
+        let (a1, a2) = args_2(inputs);
+        Ok(Tensor::Own(Value(self.map(a1, a2)?)))
+    }
 }
 
-fn reshape(inputs: Tensors) -> LNResult<Tensor> {
-    let (a1, a2) = args_2(inputs);
-    let shape = a2.as_value_ref().to_shape();
-    Ok(Tensor::Own(Value(
-        a1.as_value_ref()
-            .as_tensor()
-            .reshape(Shape::from_vec(shape)),
-    )))
+impl Map2 for Add {
+    const OP: &'static str = "add";
+    fn f<T: TensorType>(&self, t: DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>> {
+        let c = t + w;
+        Ok(c)
+    }
+
+    fn out_shape<T: TensorType>(&self, t1: &DTensor<T>, t2: &DTensor<T>) -> LNResult<Shape> {
+        todo!()
+    }
 }
 
-fn relu(inputs: Tensors) -> LNResult<Tensor> {
-    let a1 = args_1(inputs);
-    a1.as_value_ref().as_tensor().iter().for_each(|v| match v {
-        TensorValue::U8(v) => {}
-        TensorValue::U16(v) => {}
-        TensorValue::U32(v) => {}
-        TensorValue::U64(v) => {}
-        TensorValue::I8(v) => {
-            if *v < 0 {
-                *v = 0 as _;
+#[derive(Debug, Default)]
+pub(crate) struct MatMul;
+
+impl MatMul {
+    pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
+        let (a1, a2) = args_2(inputs);
+        Ok(Tensor::Own(Value(self.map(a1, a2)?)))
+    }
+}
+
+impl Map2 for MatMul {
+    const OP: &'static str = "matmul";
+    fn f<T: TensorType>(&self, t: DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>> {
+        let c = t.matmul(w)?;
+        Ok(c)
+    }
+
+    fn out_shape<T: TensorType>(&self, t1: &DTensor<T>, t2: &DTensor<T>) -> LNResult<Shape> {
+        todo!()
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct Reshape;
+
+impl Reshape {
+    pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
+        let (a1, a2) = args_2(inputs);
+        let a1 = self.map(a1, a2)?;
+        Ok(Tensor::Own(Value(a1)))
+    }
+}
+
+impl Mapi64 for Reshape {
+    const OP: &'static str = "reshape";
+    fn f<T: TensorType>(&self, t: DTensor<T>, w: &DTensor<i64>) -> LNResult<DTensor<T>> {
+        let shape = w
+            .as_slice()
+            .iter()
+            .map(|e| e.as_usize())
+            .collect::<Vec<usize>>();
+        Ok(t.reshape(Shape::from_vec(shape)))
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct Relu;
+
+impl Relu {
+    pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
+        let mut a1 = args_1(inputs);
+        a1 = Tensor::Own(Value(self.map(a1)?));
+        Ok(a1)
+    }
+}
+
+impl Map for Relu {
+    fn f<T: TensorType>(&self, t: DTensor<T>) -> LNResult<DTensor<T>> {
+        t.iter().for_each(|v| {
+            if *v < T::zero() {
+                *v = T::zero();
             }
+        });
+        Ok(t)
+    }
+
+    fn out_shape<T: TensorType>(&self, t1: &DTensor<T>) -> LNResult<Shape> {
+        todo!()
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct BatchNormalization {
+    epsilon: f32,
+}
+
+impl BatchNormalization {
+    pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
+        let (x, scale, bias, mean, var) = args_5(inputs);
+        Ok(Tensor::Own(Value(self.map(x, scale, bias, mean, var)?)))
+    }
+}
+
+impl Map5 for BatchNormalization {
+    const OP: &'static str = "BatchNormalization";
+    fn f<T: TensorType>(
+        &self,
+        t: DTensor<T>,
+        w: &DTensor<T>,
+        b: &DTensor<T>,
+        mean: &DTensor<T>,
+        var: &DTensor<T>,
+    ) -> LNResult<DTensor<T>> {
+        // let training_mode = get_attr_opt::<i64>(node, "training_mode")?;
+        // if training_mode.copied().unwrap_or(0) != 0 {
+        //     bail!("training mode is not supported for BatchNorm")
+        // }
+        let target_shape: Vec<usize> = t
+            .dim()
+            .shape()
+            .as_slice()
+            .iter()
+            .enumerate()
+            .map(|(idx, v)| if idx == 1 { *v } else { 1 })
+            .collect();
+        let target_shape = Shape::from_vec(target_shape);
+        // t.sub(mean.reshape(target_shape))
+        //     .div(var.reshape(target_shape))?;
+
+        // let xs = t
+        //     .broadcast_sub(&running_mean.reshape(target_shape)?)?
+        //     .broadcast_div(&(running_var.reshape(target_shape)? + eps as f64)?.sqrt()?)?;
+        // let weight = w.reshape(target_shape)?;
+        // let bias = b.reshape(target_shape)?;
+        // let xs = xs.broadcast_mul(&weight)?.broadcast_add(&bias)?;
+        // values.insert(node.output[0].clone(), xs);
+        Ok(t)
+    }
+
+    fn out_shape<T: TensorType>(
+        &self,
+        t1: &DTensor<T>,
+        t2: &DTensor<T>,
+        t3: &DTensor<T>,
+        t4: &DTensor<T>,
+        t5: &DTensor<T>,
+    ) -> LNResult<Shape> {
+        todo!()
+    }
+}
+
+trait Mapi64 {
+    const OP: &'static str;
+    fn f<T: TensorType>(&self, t: DTensor<T>, w: &DTensor<i64>) -> LNResult<DTensor<T>>;
+
+    fn map(&self, inp1: Tensor, inp2: Tensor) -> LNResult<GTensor> {
+        let (t1, t2) = (
+            inp1.as_value().as_tensor(),
+            inp2.as_value_ref().as_tensor_ref(),
+        );
+        let (lhs, rhs) = (t1.dtype(), t2.dtype());
+        match (t1, t2) {
+            (GTensor::U8(dt1), GTensor::I64(dt2)) => Ok(GTensor::U8(self.f(dt1, dt2)?)),
+            (GTensor::I8(dt1), GTensor::I64(dt2)) => Ok(GTensor::I8(self.f(dt1, dt2)?)),
+            (GTensor::I16(dt1), GTensor::I64(dt2)) => Ok(GTensor::I16(self.f(dt1, dt2)?)),
+            (GTensor::U16(dt1), GTensor::I64(dt2)) => Ok(GTensor::U16(self.f(dt1, dt2)?)),
+            (GTensor::I32(dt1), GTensor::I64(dt2)) => Ok(GTensor::I32(self.f(dt1, dt2)?)),
+            (GTensor::U32(dt1), GTensor::I64(dt2)) => Ok(GTensor::U32(self.f(dt1, dt2)?)),
+            (GTensor::I64(dt1), GTensor::I64(dt2)) => Ok(GTensor::I64(self.f(dt1, dt2)?)),
+            (GTensor::U64(dt1), GTensor::I64(dt2)) => Ok(GTensor::U64(self.f(dt1, dt2)?)),
+            (GTensor::F16(dt1), GTensor::I64(dt2)) => Ok(GTensor::F16(self.f(dt1, dt2)?)),
+            (GTensor::F32(dt1), GTensor::I64(dt2)) => Ok(GTensor::F32(self.f(dt1, dt2)?)),
+            (GTensor::F64(dt1), GTensor::I64(dt2)) => Ok(GTensor::F64(self.f(dt1, dt2)?)),
+            _ => Err(LNError::DTypeMismatchBinaryOp {
+                lhs: lhs,
+                rhs: rhs,
+                op: Self::OP,
+            }),
         }
-        TensorValue::I16(v) => {
-            if *v < 0 {
-                *v = 0 as _;
-            }
+    }
+}
+
+trait Map5 {
+    const OP: &'static str;
+    fn f<T: TensorType>(
+        &self,
+        t: DTensor<T>,
+        w1: &DTensor<T>,
+        w2: &DTensor<T>,
+        w3: &DTensor<T>,
+        w4: &DTensor<T>,
+    ) -> LNResult<DTensor<T>>;
+
+    fn out_shape<T: TensorType>(
+        &self,
+        t1: &DTensor<T>,
+        t2: &DTensor<T>,
+        t3: &DTensor<T>,
+        t4: &DTensor<T>,
+        t5: &DTensor<T>,
+    ) -> LNResult<Shape>;
+
+    fn map(
+        &self,
+        inp1: Tensor,
+        inp2: Tensor,
+        inp3: Tensor,
+        inp4: Tensor,
+        inp5: Tensor,
+    ) -> LNResult<GTensor> {
+        let (t1, t2, t3, t4, t5) = (
+            inp1.as_value().as_tensor(),
+            inp2.as_value_ref().as_tensor_ref(),
+            inp3.as_value_ref().as_tensor_ref(),
+            inp4.as_value_ref().as_tensor_ref(),
+            inp5.as_value_ref().as_tensor_ref(),
+        );
+        let (lhs, rhs) = (t1.dtype(), t2.dtype());
+        match (t1, t2, t3, t4, t5) {
+            (
+                GTensor::U8(dt1),
+                GTensor::U8(dt2),
+                GTensor::U8(dt3),
+                GTensor::U8(dt4),
+                GTensor::U8(dt5),
+            ) => Ok(GTensor::U8(self.f(dt1, dt2, dt3, dt4, dt5)?)),
+            (
+                GTensor::I8(dt1),
+                GTensor::I8(dt2),
+                GTensor::I8(dt3),
+                GTensor::I8(dt4),
+                GTensor::I8(dt5),
+            ) => Ok(GTensor::I8(self.f(dt1, dt2, dt3, dt4, dt5)?)),
+            (
+                GTensor::I16(dt1),
+                GTensor::I16(dt2),
+                GTensor::I16(dt3),
+                GTensor::I16(dt4),
+                GTensor::I16(dt5),
+            ) => Ok(GTensor::I16(self.f(dt1, dt2, dt3, dt4, dt5)?)),
+            (
+                GTensor::U16(dt1),
+                GTensor::U16(dt2),
+                GTensor::U16(dt3),
+                GTensor::U16(dt4),
+                GTensor::U16(dt5),
+            ) => Ok(GTensor::U16(self.f(dt1, dt2, dt3, dt4, dt5)?)),
+            (
+                GTensor::I32(dt1),
+                GTensor::I32(dt2),
+                GTensor::I32(dt3),
+                GTensor::I32(dt4),
+                GTensor::I32(dt5),
+            ) => Ok(GTensor::I32(self.f(dt1, dt2, dt3, dt4, dt5)?)),
+            (
+                GTensor::U32(dt1),
+                GTensor::U32(dt2),
+                GTensor::U32(dt3),
+                GTensor::U32(dt4),
+                GTensor::U32(dt5),
+            ) => Ok(GTensor::U32(self.f(dt1, dt2, dt3, dt4, dt5)?)),
+            (
+                GTensor::I64(dt1),
+                GTensor::I64(dt2),
+                GTensor::I64(dt3),
+                GTensor::I64(dt4),
+                GTensor::I64(dt5),
+            ) => Ok(GTensor::I64(self.f(dt1, dt2, dt3, dt4, dt5)?)),
+            (
+                GTensor::U64(dt1),
+                GTensor::U64(dt2),
+                GTensor::U64(dt3),
+                GTensor::U64(dt4),
+                GTensor::U64(dt5),
+            ) => Ok(GTensor::U64(self.f(dt1, dt2, dt3, dt4, dt5)?)),
+            (
+                GTensor::F16(dt1),
+                GTensor::F16(dt2),
+                GTensor::F16(dt3),
+                GTensor::F16(dt4),
+                GTensor::F16(dt5),
+            ) => Ok(GTensor::F16(self.f(dt1, dt2, dt3, dt4, dt5)?)),
+            (
+                GTensor::F32(dt1),
+                GTensor::F32(dt2),
+                GTensor::F32(dt3),
+                GTensor::F32(dt4),
+                GTensor::F32(dt5),
+            ) => Ok(GTensor::F32(self.f(dt1, dt2, dt3, dt4, dt5)?)),
+            (
+                GTensor::F64(dt1),
+                GTensor::F64(dt2),
+                GTensor::F64(dt3),
+                GTensor::F64(dt4),
+                GTensor::F64(dt5),
+            ) => Ok(GTensor::F64(self.f(dt1, dt2, dt3, dt4, dt5)?)),
+            _ => Err(LNError::DTypeMismatchBinaryOp {
+                lhs: lhs,
+                rhs: rhs,
+                op: Self::OP,
+            }),
         }
-        TensorValue::I32(v) => {
-            if *v < 0 {
-                *v = 0 as _;
-            }
-        }
-        TensorValue::I64(v) => {
-            if *v < 0 as _ {
-                *v = 0 as _;
-            }
-        }
-        TensorValue::F16(v) => {
-            // if *v < 0 as _ {
-            //     *v = 0 as _;
-            // }
-        }
-        TensorValue::F32(v) => {
-            if *v < 0 as _ {
-                *v = 0 as _;
-            }
-        }
-        TensorValue::F64(v) => {
-            if *v < 0 as _ {
-                *v = 0 as _;
-            }
-        }
-    });
-    Ok(a1)
+    }
 }
 
 trait Map2 {
     const OP: &'static str;
-    fn f<T: TensorType>(&self, t: &DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>>;
+    fn f<T: TensorType>(&self, t: DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>>;
 
     fn out_shape<T: TensorType>(&self, t1: &DTensor<T>, t1: &DTensor<T>) -> LNResult<Shape>;
 
     fn map(&self, inp1: Tensor, inp2: Tensor) -> LNResult<GTensor> {
         let (t1, t2) = (
-            inp1.as_value_ref().as_tensor(),
-            inp2.as_value_ref().as_tensor(),
+            inp1.as_value().as_tensor(),
+            inp2.as_value_ref().as_tensor_ref(),
         );
+        let (lhs, rhs) = (t1.dtype(), t2.dtype());
         match (t1, t2) {
-            (GTensor::U8(dt1), GTensor::U8(dt2)) => {
-                // let new_dim = self.out_shape(dt1, dt2)?;
-                Ok(GTensor::U8(self.f(dt1, dt2)?))
-            }
-            (GTensor::I8(dt1), GTensor::I8(dt2)) => {
-                // let new_dim = self.out_shape(dt1, dt2)?;
-                Ok(GTensor::I8(self.f(dt1, dt2)?))
-            }
-            (GTensor::I16(dt1), GTensor::I16(dt2)) => {
-                // let new_dim = self.out_shape(dt1, dt2)?;
-                Ok(GTensor::I16(self.f(dt1, dt2)?))
-            }
-            (GTensor::U16(dt1), GTensor::U16(dt2)) => {
-                // let new_dim = self.out_shape(dt1, dt2)?;
-                Ok(GTensor::U16(self.f(dt1, dt2)?))
-            }
-            (GTensor::I32(dt1), GTensor::I32(dt2)) => {
-                // let new_dim = self.out_shape(dt1, dt2)?;
-                Ok(GTensor::I32(self.f(dt1, dt2)?))
-            }
-            (GTensor::U32(dt1), GTensor::U32(dt2)) => {
-                //let new_dim = self.out_shape(dt1, dt2)?;
-                Ok(GTensor::U32(self.f(dt1, dt2)?))
-            }
-            (GTensor::I64(dt1), GTensor::I64(dt2)) => {
-                // let new_dim = self.out_shape(dt1, dt2)?;
-                Ok(GTensor::I64(self.f(dt1, dt2)?))
-            }
-            (GTensor::U64(dt1), GTensor::U64(dt2)) => {
-                //let new_dim = self.out_shape(dt1, dt2)?;
-                Ok(GTensor::U64(self.f(dt1, dt2)?))
-            }
-            (GTensor::F16(dt1), GTensor::F16(dt2)) => {
-                //  let new_dim = self.out_shape(dt1, dt2)?;
-                Ok(GTensor::F16(self.f(dt1, dt2)?))
-            }
-            (GTensor::F32(dt1), GTensor::F32(dt2)) => {
-                //  let new_dim = self.out_shape(dt1, dt2)?;
-                Ok(GTensor::F32(self.f(dt1, dt2)?))
-            }
-            (GTensor::F64(dt1), GTensor::F64(dt2)) => {
-                // let new_dim = self.out_shape(dt1, dt2)?;
-                Ok(GTensor::F64(self.f(dt1, dt2)?))
-            }
+            (GTensor::U8(dt1), GTensor::U8(dt2)) => Ok(GTensor::U8(self.f(dt1, dt2)?)),
+            (GTensor::I8(dt1), GTensor::I8(dt2)) => Ok(GTensor::I8(self.f(dt1, dt2)?)),
+            (GTensor::I16(dt1), GTensor::I16(dt2)) => Ok(GTensor::I16(self.f(dt1, dt2)?)),
+            (GTensor::U16(dt1), GTensor::U16(dt2)) => Ok(GTensor::U16(self.f(dt1, dt2)?)),
+            (GTensor::I32(dt1), GTensor::I32(dt2)) => Ok(GTensor::I32(self.f(dt1, dt2)?)),
+            (GTensor::U32(dt1), GTensor::U32(dt2)) => Ok(GTensor::U32(self.f(dt1, dt2)?)),
+            (GTensor::I64(dt1), GTensor::I64(dt2)) => Ok(GTensor::I64(self.f(dt1, dt2)?)),
+            (GTensor::U64(dt1), GTensor::U64(dt2)) => Ok(GTensor::U64(self.f(dt1, dt2)?)),
+            (GTensor::F16(dt1), GTensor::F16(dt2)) => Ok(GTensor::F16(self.f(dt1, dt2)?)),
+            (GTensor::F32(dt1), GTensor::F32(dt2)) => Ok(GTensor::F32(self.f(dt1, dt2)?)),
+            (GTensor::F64(dt1), GTensor::F64(dt2)) => Ok(GTensor::F64(self.f(dt1, dt2)?)),
             _ => Err(LNError::DTypeMismatchBinaryOp {
-                lhs: t1.dtype(),
-                rhs: t2.dtype(),
+                lhs: lhs,
+                rhs: rhs,
                 op: Self::OP,
             }),
         }
@@ -169,56 +387,23 @@ trait Map2 {
 }
 
 trait Map {
-    fn f<T: TensorType>(&self, t: &DTensor<T>) -> LNResult<DTensor<T>>;
+    fn f<T: TensorType>(&self, t: DTensor<T>) -> LNResult<DTensor<T>>;
 
     fn out_shape<T: TensorType>(&self, t: &DTensor<T>) -> LNResult<Shape>;
 
     fn map(&self, t: Tensor) -> LNResult<GTensor> {
-        let new_t = match t.as_value_ref().as_tensor() {
-            GTensor::U8(t1) => {
-                // let new_dim = self.out_shape(t1)?;
-                GTensor::U8(self.f(t1)?)
-            }
-            GTensor::I8(t1) => {
-                //let new_dim = self.out_shape(t1)?;
-                GTensor::I8(self.f(t1)?)
-            }
-            GTensor::I16(t1) => {
-                // let new_dim = self.out_shape(t1)?;
-                GTensor::I16(self.f(t1)?)
-            }
-            GTensor::U16(t1) => {
-                // let new_dim = self.out_shape(t1)?;
-                GTensor::U16(self.f(t1)?)
-            }
-            GTensor::I32(t1) => {
-                // let new_dim = self.out_shape(t1)?;
-                GTensor::I32(self.f(t1)?)
-            }
-            GTensor::U32(t1) => {
-                // let new_dim = self.out_shape(t1)?;
-                GTensor::U32(self.f(t1)?)
-            }
-            GTensor::I64(t1) => {
-                // let new_dim = self.out_shape(t1)?;
-                GTensor::I64(self.f(t1)?)
-            }
-            GTensor::U64(t1) => {
-                // let new_dim = self.out_shape(t1)?;
-                GTensor::U64(self.f(t1)?)
-            }
-            GTensor::F16(t1) => {
-                //  let new_dim = self.out_shape(t1)?;
-                GTensor::F16(self.f(t1)?)
-            }
-            GTensor::F32(t1) => {
-                //  let new_dim = self.out_shape(t1)?;
-                GTensor::F32(self.f(t1)?)
-            }
-            GTensor::F64(t1) => {
-                //  let new_dim = self.out_shape(t1)?;
-                GTensor::F64(self.f(t1)?)
-            }
+        let new_t = match t.as_value().as_tensor() {
+            GTensor::U8(t1) => GTensor::U8(self.f(t1)?),
+            GTensor::I8(t1) => GTensor::I8(self.f(t1)?),
+            GTensor::I16(t1) => GTensor::I16(self.f(t1)?),
+            GTensor::U16(t1) => GTensor::U16(self.f(t1)?),
+            GTensor::I32(t1) => GTensor::I32(self.f(t1)?),
+            GTensor::U32(t1) => GTensor::U32(self.f(t1)?),
+            GTensor::I64(t1) => GTensor::I64(self.f(t1)?),
+            GTensor::U64(t1) => GTensor::U64(self.f(t1)?),
+            GTensor::F16(t1) => GTensor::F16(self.f(t1)?),
+            GTensor::F32(t1) => GTensor::F32(self.f(t1)?),
+            GTensor::F64(t1) => GTensor::F64(self.f(t1)?),
         };
         Ok(new_t)
     }
@@ -249,7 +434,7 @@ impl Map for MaxPool2D {
         Ok(new_shape)
     }
 
-    fn f<T: TensorType>(&self, t: &DTensor<T>) -> LNResult<DTensor<T>> {
+    fn f<T: TensorType>(&self, t: DTensor<T>) -> LNResult<DTensor<T>> {
         let src = t.as_slice();
         let shape = t.dim();
         // https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html
@@ -286,7 +471,7 @@ impl Map for MaxPool2D {
                 }
             }
         }
-        let new_dim = self.out_shape(t)?;
+        let new_dim = self.out_shape(&t)?;
         Ok(DTensor::with_shape(dst, new_dim))
     }
 }
@@ -353,7 +538,7 @@ impl Map2 for Conv2D {
         Ok(Shape::from_vec(new_shape))
     }
 
-    fn f<T: TensorType>(&self, t1: &DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>> {
+    fn f<T: TensorType>(&self, t1: DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>> {
         let (p1, p2, p3, p4) = (self.0.pads.0, self.0.pads.1, self.0.pads.2, self.0.pads.3);
         let (padding, t) = if p1 != p2 || p1 != p3 || p1 != p4 {
             (0, t1.pad(2, p1, p3, T::zero())?.pad(3, p2, p4, T::zero())?)
@@ -512,26 +697,17 @@ fn args_2(mut inputs: Tensors) -> (Tensor, Tensor) {
     (a1, a2)
 }
 
-mod tests {
-    use super::*;
-    use galois::Tensor as GTensor;
-    use galois::{arr, mat};
-    #[test]
-    fn op_add() {
-        let mut inputs = Tensors::new();
-        let a = Tensor::Own(Value(GTensor::I32(mat(&[
-            [0, 0, 0],
-            [1, 1, 1],
-            [2, 2, 2],
-            [3, 3, 3],
-        ]))));
-        let b = Tensor::Own(Value(GTensor::I32(arr(&[1, 1, 1]))));
-
-        inputs.push(a);
-        inputs.push(b);
-        println!("{:?}", inputs);
-
-        let c = add(inputs).unwrap();
-        println!("{:?}", c);
+fn args_5(mut inputs: Tensors) -> (Tensor, Tensor, Tensor, Tensor, Tensor) {
+    if inputs.len() < 5 {
+        panic!("tensor input smaller than 2")
     }
+    let (a5, a4, a3, a2, a1) = (
+        inputs.pop().unwrap(),
+        inputs.pop().unwrap(),
+        inputs.pop().unwrap(),
+        inputs.pop().unwrap(),
+        inputs.pop().unwrap(),
+    );
+    drop(inputs);
+    (a1, a2, a3, a4, a5)
 }

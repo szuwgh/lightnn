@@ -170,6 +170,25 @@ mod tests {
     }
 
     #[test]
+    fn test_infer_mnist() {
+        let mut m = load("/opt/rsproject/gptgrep/lightnn/model/mobilenetv2-7.onnx").unwrap();
+        let inner = Inner::load(m).unwrap();
+        for input in inner.input.iter() {
+            println!("input name:{:?}", input);
+        }
+        println!("===============================");
+        for node in inner.nodes.iter() {
+            println!("node name:{:?}", node.name);
+            println!("node op:{:?}", node.op);
+            println!("node input :{:?}", node.inputs);
+            println!("node weights :{:?}", node.weights);
+            println!("node output :{:?}", node.outputs);
+            println!("===============================");
+        }
+        println!("last output:{:?}", inner.output);
+    }
+
+    #[test]
     fn test_i32_to_u16() {
         let i32_array: [i32; 4] = [1, 2, 3, 4];
 
