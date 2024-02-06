@@ -170,7 +170,7 @@ mod tests {
     }
 
     #[test]
-    fn test_infer_mnist() {
+    fn test_infer_mobilenet() {
         let mut m = load("/opt/rsproject/gptgrep/lightnn/model/mobilenetv2-7.onnx").unwrap();
         let inner = Inner::load(m).unwrap();
         for input in inner.input.iter() {

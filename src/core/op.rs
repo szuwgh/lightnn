@@ -198,6 +198,101 @@ impl Map5 for BatchNormalization {
     }
 }
 
+struct AvgPool2D((usize, usize), (usize, usize));
+
+impl Map for AvgPool2D {
+    fn out_shape<T: TensorType>(&self, t: &DTensor<T>) -> LNResult<Shape> {
+        todo!()
+    }
+
+    fn f<T: TensorType>(&self, t: DTensor<T>) -> LNResult<DTensor<T>> {
+        // https://pytorch.org/docs/stable/generated/torch.nn.AvgPool2d.html
+        let (k_h, k_w) = self.0;
+        let (s_h, s_w) = self.1;
+        let (b_sz, c, h, w) = t.shape().dims4();
+        let stride = t.dim().stride();
+        let (stride_h, stride_w) = (stride[2], stride[3]);
+        let h_out = (h - k_h) / s_h + 1;
+        let w_out = (w - k_w) / s_w + 1;
+        let src = t.as_slice();
+        let src_index = 0;
+        let mut dst = vec![T::zero(); b_sz * c * h_out * w_out];
+        let scale = 1f64 / (k_h * k_w) as f64;
+        let scale = T::from_f64(scale);
+        for b_idx in 0..b_sz {
+            let dst = &mut dst[b_idx * c * h_out * w_out..];
+            let src_index = src_index + b_idx * stride[0];
+            for c_idx in 0..c {
+                let dst = &mut dst[c_idx * h_out * w_out..];
+                let src_index = src_index + c_idx * stride[1];
+                for h_idx in 0..h_out {
+                    for w_idx in 0..w_out {
+                        let mut sum = T::zero();
+                        for m in 0..k_h {
+                            for n in 0..k_w {
+                                let m = s_h * h_idx + m;
+                                let n = s_w * w_idx + n;
+                                sum += src[src_index + m * stride_h + n * stride_w]
+                            }
+                        }
+                        dst[h_idx * w_out + w_idx] = sum * scale;
+                    }
+                }
+            }
+        }
+        Ok(DTensor::with_shape(dst, t.shape().clone()))
+    }
+}
+
+struct GlobalAvgPool2D;
+
+// 全局平均池化层的输出形状取决于输入的形状和数据格式（data_format）。
+// 一般来说，如果输入的形状是 (batch_size, height, width, channels) ，
+// 那么输出的形状就是 (batch_size, channels) 。如果输入的形状是 (batch_size, channels, height, width) ，
+// 那么输出的形状就是 (batch_size, channels, 1, 1)
+
+impl Map for GlobalAvgPool2D {
+    fn out_shape<T: TensorType>(&self, t: &DTensor<T>) -> LNResult<Shape> {
+        let (b_sz, c, h, w) = t.shape().dims4();
+        Ok(Shape::from_array([b_sz, c, 1, 1]))
+    }
+
+    fn f<T: TensorType>(&self, t: DTensor<T>) -> LNResult<DTensor<T>> {
+        let out_shape = self.out_shape(&t)?;
+        // https://pytorch.org/docs/stable/generated/torch.nn.AvgPool2d.html
+        let (b_sz, c, h, w) = t.shape().dims4();
+        let stride = t.dim().stride();
+        let (stride_h, stride_w) = (stride[2], stride[3]);
+        let h_out = 1;
+        let w_out = 1;
+        let src = t.as_slice();
+        let src_index = 0;
+        let mut dst = vec![T::zero(); b_sz * c * h_out * w_out];
+        let scale = 1f64 / (h * w) as f64;
+        let scale = T::from_f64(scale);
+        for b_idx in 0..b_sz {
+            let dst = &mut dst[b_idx * c * h_out * w_out..];
+            let src_index = src_index + b_idx * stride[0];
+            for c_idx in 0..c {
+                let dst = &mut dst[c_idx * h_out * w_out..];
+                let src_index = src_index + c_idx * stride[1];
+                for h_idx in 0..h_out {
+                    for w_idx in 0..w_out {
+                        let mut sum = T::zero();
+                        for m in 0..h {
+                            for n in 0..w {
+                                sum += src[src_index + m * stride_h + n * stride_w]
+                            }
+                        }
+                        dst[h_idx * w_out + w_idx] = sum * scale;
+                    }
+                }
+            }
+        }
+        Ok(DTensor::with_shape(dst, out_shape))
+    }
+}
+
 trait Mapi64 {
     const OP: &'static str;
     fn f<T: TensorType>(&self, t: DTensor<T>, w: &DTensor<i64>) -> LNResult<DTensor<T>>;
