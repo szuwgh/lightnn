@@ -322,6 +322,14 @@ impl onnx::NodeProto {
                 Op::MaxPool(max_pool)
             }
             "MatMul" => Op::MatMul(MatMul::default()),
+            "BatchNormalization" => {
+                let training_mode = self.get_attr_pro::<i64>("training_mode");
+                if training_mode.copied().unwrap_or(0) != 0 {
+                    panic!("training mode is not supported for BatchNorm")
+                }
+                let eps = self.get_attr_pro::<f32>("epsilon").unwrap_or(&1e-5);
+                Op::BatchNormalization(BatchNormalization::new(*eps))
+            }
             _ => panic!("not suppert op node {}", self.op_type()),
         };
         Ok(op)
@@ -475,8 +483,72 @@ mod op_tests {
         (smallvec![t1, t2], t3)
     }
 
+    fn input5(op: &str) -> (Tensors, Value) {
+        let input0 =
+            PathBuf::from(TEST_DATA_PATH).join(format!("{}/test_data_set_0/input_0.pb", op));
+        let input1 =
+            PathBuf::from(TEST_DATA_PATH).join(format!("{}/test_data_set_0/input_1.pb", op));
+
+        let input2 =
+            PathBuf::from(TEST_DATA_PATH).join(format!("{}/test_data_set_0/input_2.pb", op));
+        let input3 =
+            PathBuf::from(TEST_DATA_PATH).join(format!("{}/test_data_set_0/input_3.pb", op));
+        let input4 =
+            PathBuf::from(TEST_DATA_PATH).join(format!("{}/test_data_set_0/input_4.pb", op));
+
+        let output0 =
+            PathBuf::from(TEST_DATA_PATH).join(format!("{}/test_data_set_0/output_0.pb", op));
+
+        let file = File::open(input0).unwrap();
+        let mut buf_reader = BufReader::new(file);
+        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
+        let t1 = Tensor::Own(m.parse_mut().unwrap());
+
+        let file = File::open(input1).unwrap();
+        let mut buf_reader = BufReader::new(file);
+        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
+        let t2 = Tensor::Own(m.parse_mut().unwrap());
+
+        let file = File::open(input2).unwrap();
+        let mut buf_reader = BufReader::new(file);
+        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
+        let t3 = Tensor::Own(m.parse_mut().unwrap());
+
+        let file = File::open(input3).unwrap();
+        let mut buf_reader = BufReader::new(file);
+        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
+        let t4 = Tensor::Own(m.parse_mut().unwrap());
+
+        let file = File::open(input4).unwrap();
+        let mut buf_reader = BufReader::new(file);
+        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
+        let t5 = Tensor::Own(m.parse_mut().unwrap());
+
+        let file = File::open(output0).unwrap();
+        let mut buf_reader = BufReader::new(file);
+        let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
+        let out: Value = m.parse_mut().unwrap();
+        println!("t3{:?}", out.as_tensor_ref());
+
+        (smallvec![t1, t2, t3, t4, t5], out)
+    }
+
     fn input2_infer(test_op: &str) {
         let (inputs, output) = input2(test_op);
+        let model = PathBuf::from(TEST_DATA_PATH).join(format!("{}/{}", test_op, "model.onnx"));
+        let file = File::open(model).unwrap();
+        let mut buf_reader = BufReader::new(file);
+        let mut m = ModelProto::parse_from_reader(&mut buf_reader).unwrap();
+        let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
+        let mut t3_output = op.infer(inputs).unwrap();
+        let t33 = t3_output.pop().unwrap();
+        println!("infer output{:?}", t33.as_value_ref().as_tensor_ref());
+        assert!(*(t33.as_value_ref().as_tensor_ref()) == *output.as_tensor_ref());
+        println!("pass {} success", test_op);
+    }
+
+    fn input5_infer(test_op: &str) {
+        let (inputs, output) = input5(test_op);
         let model = PathBuf::from(TEST_DATA_PATH).join(format!("{}/{}", test_op, "model.onnx"));
         let file = File::open(model).unwrap();
         let mut buf_reader = BufReader::new(file);
@@ -565,5 +637,15 @@ mod op_tests {
     #[test]
     fn test_matmul_4d() {
         input2_infer("test_matmul_4d");
+    }
+
+    #[test]
+    fn test_batchnorm_epsilon() {
+        input5_infer("test_batchnorm_epsilon");
+    }
+
+    #[test]
+    fn test_batchnorm_example() {
+        input5_infer("test_batchnorm_example");
     }
 }

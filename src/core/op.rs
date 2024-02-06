@@ -10,7 +10,9 @@ use galois::ToUsize;
 use rayon::prelude::*;
 use smallvec::smallvec;
 use std::default;
+use std::ops::Add as opAdd;
 use std::ops::Div;
+use std::ops::Mul;
 use std::ops::Sub;
 #[derive(Debug)]
 pub(crate) enum Op {
@@ -20,7 +22,7 @@ pub(crate) enum Op {
     Relu(Relu), //
     MaxPool(MaxPool2D),
     MatMul(MatMul),
-    BatchNormalization(),
+    BatchNormalization(BatchNormalization),
     Empty,
 }
 
@@ -39,6 +41,7 @@ impl Op {
             Op::MaxPool(op) => Ok(smallvec![op.apply(inputs)?]),
             Op::MatMul(op) => Ok(smallvec![op.apply(inputs)?]),
             Op::Conv(op) => Ok(smallvec![op.apply(inputs)?]),
+            Op::BatchNormalization(op) => Ok(smallvec![op.apply(inputs)?]),
             _ => {
                 todo!()
             }
@@ -109,7 +112,7 @@ impl Mapi64 for Reshape {
             .iter()
             .map(|e| e.as_usize())
             .collect::<Vec<usize>>();
-        Ok(t.reshape(Shape::from_vec(shape)))
+        Ok(t.into_reshape(Shape::from_vec(shape)))
     }
 }
 
@@ -145,6 +148,9 @@ pub(crate) struct BatchNormalization {
 }
 
 impl BatchNormalization {
+    pub(crate) fn new(epsilon: f32) -> Self {
+        Self { epsilon: epsilon }
+    }
     pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
         let (x, scale, bias, mean, var) = args_5(inputs);
         Ok(Tensor::Own(Value(self.map(x, scale, bias, mean, var)?)))
@@ -161,10 +167,7 @@ impl Map5 for BatchNormalization {
         mean: &DTensor<T>,
         var: &DTensor<T>,
     ) -> LNResult<DTensor<T>> {
-        // let training_mode = get_attr_opt::<i64>(node, "training_mode")?;
-        // if training_mode.copied().unwrap_or(0) != 0 {
-        //     bail!("training mode is not supported for BatchNorm")
-        // }
+        let eps = self.epsilon;
         let target_shape: Vec<usize> = t
             .dim()
             .shape()
@@ -174,16 +177,12 @@ impl Map5 for BatchNormalization {
             .map(|(idx, v)| if idx == 1 { *v } else { 1 })
             .collect();
         let target_shape = Shape::from_vec(target_shape);
-        // t.sub(mean.reshape(target_shape))
-        //     .div(var.reshape(target_shape))?;
-
-        // let xs = t
-        //     .broadcast_sub(&running_mean.reshape(target_shape)?)?
-        //     .broadcast_div(&(running_var.reshape(target_shape)? + eps as f64)?.sqrt()?)?;
-        // let weight = w.reshape(target_shape)?;
-        // let bias = b.reshape(target_shape)?;
-        // let xs = xs.broadcast_mul(&weight)?.broadcast_add(&bias)?;
-        // values.insert(node.output[0].clone(), xs);
+        let t = t
+            .sub(mean.reshape(target_shape.clone()))
+            .div(&(var.reshape(target_shape.clone()) + T::from_f32(eps)).sqrt());
+        let weight = w.reshape(target_shape.clone());
+        let bias = b.reshape(target_shape);
+        let t = t.mul(&weight).add(&bias);
         Ok(t)
     }
 
