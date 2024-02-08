@@ -240,6 +240,7 @@ impl onnx::NodeProto {
                     Some(s) => panic!("unsupported auto_pad {s}"),
                 };
                 let pads = match pads {
+                    Some([p]) => (*p as usize, *p as usize, *p as usize, *p as usize),
                     Some(&[p1, p2, p3, p4]) => {
                         let p1 = p1 as usize;
                         let p2 = p2 as usize;
@@ -330,6 +331,7 @@ impl onnx::NodeProto {
                 let eps = self.get_attr_pro::<f32>("epsilon").unwrap_or(&1e-5);
                 Op::BatchNormalization(BatchNormalization::new(*eps))
             }
+            "GlobalAveragePool" => Op::GlobalAvgPool2D(GlobalAvgPool2D::default()),
             _ => panic!("not suppert op node {}", self.op_type()),
         };
         Ok(op)
@@ -450,7 +452,7 @@ mod op_tests {
         let mut buf_reader = BufReader::new(file);
         let mut m = TensorProto::parse_from_reader(&mut buf_reader).unwrap();
         let t3: Value = m.parse_mut().unwrap();
-
+        println!("t3{:?}", t3.as_tensor_ref());
         (smallvec![t1], t3)
     }
 
@@ -570,10 +572,11 @@ mod op_tests {
         let op = m.get_graph_mut().get_node_mut()[0].get_op().unwrap();
         let mut t3_output = op.infer(inputs).unwrap();
         let t33 = t3_output.pop().unwrap();
-
+        println!("infer output{:?}", t33.as_value_ref().as_tensor_ref());
         assert!(*(t33.as_value_ref().as_tensor_ref()) == *output.as_tensor_ref());
         println!("pass {} success", test_op);
     }
+
     #[test]
     fn test_add() {
         input2_infer("test_add");
@@ -582,6 +585,11 @@ mod op_tests {
     #[test]
     fn test_reshape_extended_dims() {
         input2_infer("test_reshape_extended_dims");
+    }
+
+    #[test]
+    fn test_reshape_negative_dim() {
+        input2_infer("test_reshape_negative_dim");
     }
 
     #[test]
@@ -648,4 +656,14 @@ mod op_tests {
     fn test_batchnorm_example() {
         input5_infer("test_batchnorm_example");
     }
+
+    #[test]
+    fn test_globalaveragepool() {
+        input1_infer("test_globalaveragepool");
+    }
+
+    // #[test]
+    // fn test_globalaveragepool() {
+    //     input1_infer("test_globalaveragepool");
+    // }
 }

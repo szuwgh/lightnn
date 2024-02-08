@@ -26,7 +26,7 @@
 
 /// Generated files are compatible only with the same version
 /// of protobuf runtime.
-const _PROTOBUF_VERSION_CHECK: () = ::protobuf::VERSION_3_2_0;
+const _PROTOBUF_VERSION_CHECK: () = ::protobuf::VERSION_3_3_0;
 use protobuf::Message as Message_imported_for_functions;
 
 use crate::util::error::LNResult;
@@ -631,7 +631,7 @@ pub mod attribute_proto {
 
     impl ::protobuf::Enum for AttributeType {
         const NAME: &'static str = "AttributeType";
-
+        fn from_str(_: &str) -> std::option::Option<Self> { todo!() }
         fn value(&self) -> i32 {
             *self as i32
         }
@@ -3258,6 +3258,8 @@ pub mod tensor_proto {
     impl ::protobuf::Enum for DataType {
         const NAME: &'static str = "DataType";
 
+        fn from_str(_: &str) -> std::option::Option<Self> { todo!() }
+
         fn value(&self) -> i32 {
             *self as i32
         }
@@ -3335,7 +3337,7 @@ pub mod tensor_proto {
 
     impl ::protobuf::Enum for DataLocation {
         const NAME: &'static str = "DataLocation";
-
+        fn from_str(_: &str) -> std::option::Option<Self> { todo!() }
         fn value(&self) -> i32 {
             *self as i32
         }
@@ -5408,6 +5410,7 @@ pub enum Version {
 }
 
 impl ::protobuf::Enum for Version {
+    fn from_str(_: &str) -> std::option::Option<Self> { todo!() }
     const NAME: &'static str = "Version";
 
     fn value(&self) -> i32 {
@@ -5462,6 +5465,7 @@ pub enum OperatorStatus {
 }
 
 impl ::protobuf::Enum for OperatorStatus {
+    fn from_str(_: &str) -> std::option::Option<Self> { todo!() }
     const NAME: &'static str = "OperatorStatus";
 
     fn value(&self) -> i32 {

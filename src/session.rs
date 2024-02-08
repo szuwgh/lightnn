@@ -6,14 +6,21 @@ use super::util::error::LNResult;
 use crate::core::tensor::{Tensor, Tensors};
 use crate::core::Node;
 use crate::core::{Parser, ParserMut};
+use crate::onnx;
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::Arc;
-
 #[derive(Clone)]
 pub struct Model(Arc<Inner>);
 
 impl Model {
     pub fn load(mut m: ModelProto) -> LNResult<Model> {
+        let inner = Arc::new(Inner::load(m)?);
+        Ok(Model(inner))
+    }
+
+    pub fn from_path<P: AsRef<Path>>(path: P) -> LNResult<Model> {
+        let m = onnx::load(path)?;
         let inner = Arc::new(Inner::load(m)?);
         Ok(Model(inner))
     }
@@ -73,7 +80,7 @@ impl Inner {
             .iter_mut()
             .map(|e| *values_map.get(e.name()).unwrap())
             .collect::<Vec<usize>>();
-        println!("{:?}", values_map);
+        //  println!("{:?}", values_map);
         Ok(Inner {
             nodes: nodes,
             input: input.into_boxed_slice(),
@@ -84,7 +91,7 @@ impl Inner {
 }
 
 impl Model {
-    fn session(&self) -> LNResult<Session> {
+    pub fn session(&self) -> LNResult<Session> {
         Ok(Session {
             values: vec![None; self.0.values_len],
             model: self.clone(),
@@ -106,9 +113,14 @@ impl Session {
 
     pub fn run(&mut self) -> LNResult<Tensors> {
         for n in self.model.0.nodes.iter() {
+            println!("node name:{:?}", n.name);
             let mut inputs = n.get_input(&mut self.values)?;
             n.get_weight().iter().for_each(|v| inputs.push(v.1.clone()));
             let mut output = n.apply(inputs)?;
+            println!(
+                "output shape:{:?}",
+                output[0].as_value_ref().as_tensor_ref().shape()
+            );
             let output_name = n.get_output();
             assert!(output.len() == output_name.len());
             while let Some(v) = output.pop() {

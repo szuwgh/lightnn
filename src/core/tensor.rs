@@ -24,6 +24,10 @@ impl Debug for Tensor {
 }
 
 impl Tensor {
+    pub fn new(t: GTensor) -> Self {
+        Tensor::Own(Value(t))
+    }
+
     pub(crate) fn as_value_ref(&self) -> &Value {
         match self {
             Tensor::Own(v) => &v,
