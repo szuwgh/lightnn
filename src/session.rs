@@ -36,7 +36,7 @@ struct Inner {
 
     values_len: usize,
 }
-
+use std::time::{SystemTime, UNIX_EPOCH};
 impl Inner {
     pub fn load(mut m: ModelProto) -> LNResult<Inner> {
         //获取所有权重值
@@ -113,14 +113,18 @@ impl Session {
 
     pub fn run(&mut self) -> LNResult<Tensors> {
         for n in self.model.0.nodes.iter() {
-            println!("node name:{:?}", n.name);
             let mut inputs = n.get_input(&mut self.values)?;
             n.get_weight().iter().for_each(|v| inputs.push(v.1.clone()));
+            let time1 = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis();
             let mut output = n.apply(inputs)?;
-            println!(
-                "output shape:{:?}",
-                output[0].as_value_ref().as_tensor_ref().shape()
-            );
+            let time2 = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis();
+            println!("node name:{:?},{}", n.name, time2 - time1);
             let output_name = n.get_output();
             assert!(output.len() == output_name.len());
             while let Some(v) = output.pop() {

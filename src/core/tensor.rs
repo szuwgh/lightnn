@@ -1,7 +1,8 @@
 use galois::Shape;
 use galois::{DType, Tensor as GTensor};
 use std::fmt::Debug;
-
+use std::ops::Deref;
+use std::rc::Rc;
 use std::sync::Arc;
 pub type F16 = half::f16;
 use smallvec::SmallVec;
@@ -10,7 +11,7 @@ pub type Tensors = SmallVec<[Tensor; 4]>;
 
 #[derive(Clone)]
 pub enum Tensor {
-    Own(Value),
+    Own(Rc<Value>),
     Share(Arc<Value>),
 }
 
@@ -24,21 +25,18 @@ impl Debug for Tensor {
 }
 
 impl Tensor {
+    pub fn with_value(t: Value) -> Self {
+        Tensor::Own(Rc::new(t))
+    }
+
     pub fn new(t: GTensor) -> Self {
-        Tensor::Own(Value(t))
+        Self::with_value(Value(t))
     }
 
     pub fn as_value_ref(&self) -> &Value {
         match self {
             Tensor::Own(v) => &v,
             Tensor::Share(v) => v.as_ref(),
-        }
-    }
-
-    pub fn as_value(self) -> Value {
-        match self {
-            Tensor::Own(v) => v,
-            Tensor::Share(_) => panic!("not get share value"),
         }
     }
 }

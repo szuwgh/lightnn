@@ -14,11 +14,21 @@ fn main() {
         (resized[(x as _, y as _)][c] as f32 / 255.0 - mean) / std
     });
 
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let time1 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
     let model =
         Model::from_path("/opt/rsproject/gptgrep/lightnn/model/mobilenetv2-7.onnx").unwrap();
     let mut session = model.session().unwrap();
     let t = lnTensor::new(Tensor::F32(m1));
     session.set_input(smallvec![t]);
     let t = session.run().unwrap();
+    let time2 = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis();
     println!("{:?}", t[0].as_value_ref().as_tensor_ref());
+    println!("{:?}", time2 - time1);
 }

@@ -15,6 +15,7 @@ use std::ops::Add as opAdd;
 use std::ops::Div;
 use std::ops::Mul;
 use std::ops::Sub;
+use std::rc::Rc;
 #[derive(Debug)]
 pub(crate) enum Op {
     Add(Add),
@@ -58,13 +59,13 @@ pub(crate) struct Add;
 impl Add {
     pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
         let (a1, a2) = args_2(inputs);
-        Ok(Tensor::Own(Value(self.map(a1, a2)?)))
+        Ok(Tensor::new(self.map(a1, a2)?))
     }
 }
 
 impl Map2 for Add {
     const OP: &'static str = "add";
-    fn f<T: TensorType>(&self, t: DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>> {
+    fn f<T: TensorType>(&self, t: &DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>> {
         let c = t + w;
         Ok(c)
     }
@@ -80,13 +81,13 @@ pub(crate) struct MatMul;
 impl MatMul {
     pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
         let (a1, a2) = args_2(inputs);
-        Ok(Tensor::Own(Value(self.map(a1, a2)?)))
+        Ok(Tensor::new(self.map(a1, a2)?))
     }
 }
 
 impl Map2 for MatMul {
     const OP: &'static str = "matmul";
-    fn f<T: TensorType>(&self, t: DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>> {
+    fn f<T: TensorType>(&self, t: &DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>> {
         let c = t.matmul(w)?;
         Ok(c)
     }
@@ -103,13 +104,13 @@ impl Reshape {
     pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
         let (a1, a2) = args_2(inputs);
         let a1 = self.map(a1, a2)?;
-        Ok(Tensor::Own(Value(a1)))
+        Ok(Tensor::new(a1))
     }
 }
 
 impl Mapi64 for Reshape {
     const OP: &'static str = "reshape";
-    fn f<T: TensorType>(&self, t: DTensor<T>, w: &DTensor<i64>) -> LNResult<DTensor<T>> {
+    fn f<T: TensorType>(&self, t: &DTensor<T>, w: &DTensor<i64>) -> LNResult<DTensor<T>> {
         let mut other_than_minus1 = 1usize;
         for &mut v in w.iter() {
             if v != -1 && v != 0 {
@@ -128,7 +129,7 @@ impl Mapi64 for Reshape {
             })
             .collect::<GResult<Vec<usize>>>()?;
 
-        Ok(t.into_reshape(Shape::from_vec(shape)))
+        Ok(t.reshape(Shape::from_vec(shape)))
     }
 }
 
@@ -138,19 +139,19 @@ pub(crate) struct Relu;
 impl Relu {
     pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
         let mut a1 = args_1(inputs);
-        a1 = Tensor::Own(Value(self.map(a1)?));
+        a1 = Tensor::new(self.map(a1)?);
         Ok(a1)
     }
 }
 
 impl Map for Relu {
-    fn f<T: TensorType>(&self, t: DTensor<T>) -> LNResult<DTensor<T>> {
+    fn f<T: TensorType>(&self, t: &DTensor<T>) -> LNResult<DTensor<T>> {
         t.iter().for_each(|v| {
             if *v < T::zero() {
                 *v = T::zero();
             }
         });
-        Ok(t)
+        Ok(t.view())
     }
 
     fn out_shape<T: TensorType>(&self, t1: &DTensor<T>) -> LNResult<Shape> {
@@ -169,7 +170,7 @@ impl BatchNormalization {
     }
     pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
         let (x, scale, bias, mean, var) = args_5(inputs);
-        Ok(Tensor::Own(Value(self.map(x, scale, bias, mean, var)?)))
+        Ok(Tensor::new(self.map(x, scale, bias, mean, var)?))
     }
 }
 
@@ -177,13 +178,13 @@ impl Map5 for BatchNormalization {
     const OP: &'static str = "BatchNormalization";
     fn f<T: TensorType>(
         &self,
-        t: DTensor<T>,
+        t: &DTensor<T>,
         w: &DTensor<T>,
         b: &DTensor<T>,
         mean: &DTensor<T>,
         var: &DTensor<T>,
     ) -> LNResult<DTensor<T>> {
-        let eps = self.epsilon;
+        let eps = T::from_f32(self.epsilon);
         let target_shape: Vec<usize> = t
             .dim()
             .shape()
@@ -194,8 +195,9 @@ impl Map5 for BatchNormalization {
             .collect();
         let target_shape = Shape::from_vec(target_shape);
         let t = t
+            .view()
             .sub(mean.reshape(target_shape.clone()))
-            .div(&(var.reshape(target_shape.clone()) + T::from_f32(eps)).sqrt());
+            .div(&((var.reshape(target_shape.clone()) + eps).into_sqrt()));
         let weight = w.reshape(target_shape.clone());
         let bias = b.reshape(target_shape);
         let t = t.mul(&weight).add(&bias);
@@ -204,11 +206,11 @@ impl Map5 for BatchNormalization {
 
     fn out_shape<T: TensorType>(
         &self,
-        t1: &DTensor<T>,
-        t2: &DTensor<T>,
-        t3: &DTensor<T>,
-        t4: &DTensor<T>,
-        t5: &DTensor<T>,
+        _: &DTensor<T>,
+        _: &DTensor<T>,
+        _: &DTensor<T>,
+        _: &DTensor<T>,
+        _: &DTensor<T>,
     ) -> LNResult<Shape> {
         todo!()
     }
@@ -221,7 +223,7 @@ impl Map for AvgPool2D {
         todo!()
     }
 
-    fn f<T: TensorType>(&self, t: DTensor<T>) -> LNResult<DTensor<T>> {
+    fn f<T: TensorType>(&self, t: &DTensor<T>) -> LNResult<DTensor<T>> {
         // https://pytorch.org/docs/stable/generated/torch.nn.AvgPool2d.html
         let (k_h, k_w) = self.0;
         let (s_h, s_w) = self.1;
@@ -266,7 +268,7 @@ pub(crate) struct GlobalAvgPool2D;
 impl GlobalAvgPool2D {
     pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
         let x = args_1(inputs);
-        Ok(Tensor::Own(Value(self.map(x)?)))
+        Ok(Tensor::new(self.map(x)?))
     }
 }
 
@@ -281,7 +283,7 @@ impl Map for GlobalAvgPool2D {
         Ok(Shape::from_array([b_sz, c, 1, 1]))
     }
 
-    fn f<T: TensorType>(&self, t: DTensor<T>) -> LNResult<DTensor<T>> {
+    fn f<T: TensorType>(&self, t: &DTensor<T>) -> LNResult<DTensor<T>> {
         let out_shape = self.out_shape(&t)?;
         // https://pytorch.org/docs/stable/generated/torch.nn.AvgPool2d.html
         let (b_sz, c, h, w) = t.shape().dims4();
@@ -319,11 +321,11 @@ impl Map for GlobalAvgPool2D {
 
 trait Mapi64 {
     const OP: &'static str;
-    fn f<T: TensorType>(&self, t: DTensor<T>, w: &DTensor<i64>) -> LNResult<DTensor<T>>;
+    fn f<T: TensorType>(&self, t: &DTensor<T>, w: &DTensor<i64>) -> LNResult<DTensor<T>>;
 
     fn map(&self, inp1: Tensor, inp2: Tensor) -> LNResult<GTensor> {
         let (t1, t2) = (
-            inp1.as_value().as_tensor(),
+            inp1.as_value_ref().as_tensor_ref(),
             inp2.as_value_ref().as_tensor_ref(),
         );
         let (lhs, rhs) = (t1.dtype(), t2.dtype());
@@ -352,7 +354,7 @@ trait Map5 {
     const OP: &'static str;
     fn f<T: TensorType>(
         &self,
-        t: DTensor<T>,
+        t: &DTensor<T>,
         w1: &DTensor<T>,
         w2: &DTensor<T>,
         w3: &DTensor<T>,
@@ -377,7 +379,7 @@ trait Map5 {
         inp5: Tensor,
     ) -> LNResult<GTensor> {
         let (t1, t2, t3, t4, t5) = (
-            inp1.as_value().as_tensor(),
+            inp1.as_value_ref().as_tensor_ref(),
             inp2.as_value_ref().as_tensor_ref(),
             inp3.as_value_ref().as_tensor_ref(),
             inp4.as_value_ref().as_tensor_ref(),
@@ -473,13 +475,13 @@ trait Map5 {
 
 trait Map2 {
     const OP: &'static str;
-    fn f<T: TensorType>(&self, t: DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>>;
+    fn f<T: TensorType>(&self, t: &DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>>;
 
     fn out_shape<T: TensorType>(&self, t1: &DTensor<T>, t1: &DTensor<T>) -> LNResult<Shape>;
 
     fn map(&self, inp1: Tensor, inp2: Tensor) -> LNResult<GTensor> {
         let (t1, t2) = (
-            inp1.as_value().as_tensor(),
+            inp1.as_value_ref().as_tensor_ref(),
             inp2.as_value_ref().as_tensor_ref(),
         );
         let (lhs, rhs) = (t1.dtype(), t2.dtype());
@@ -505,12 +507,12 @@ trait Map2 {
 }
 
 trait Map {
-    fn f<T: TensorType>(&self, t: DTensor<T>) -> LNResult<DTensor<T>>;
+    fn f<T: TensorType>(&self, t: &DTensor<T>) -> LNResult<DTensor<T>>;
 
     fn out_shape<T: TensorType>(&self, t: &DTensor<T>) -> LNResult<Shape>;
 
     fn map(&self, t: Tensor) -> LNResult<GTensor> {
-        let new_t = match t.as_value().as_tensor() {
+        let new_t = match t.as_value_ref().as_tensor_ref() {
             GTensor::U8(t1) => GTensor::U8(self.f(t1)?),
             GTensor::I8(t1) => GTensor::I8(self.f(t1)?),
             GTensor::I16(t1) => GTensor::I16(self.f(t1)?),
@@ -538,7 +540,7 @@ pub(crate) struct MaxPool2D(pub(crate) (usize, usize), pub(crate) (usize, usize)
 impl MaxPool2D {
     pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
         let a1 = args_1(inputs);
-        Ok(Tensor::Own(Value(self.map(a1)?)))
+        Ok(Tensor::new(self.map(a1)?))
     }
 }
 
@@ -552,7 +554,7 @@ impl Map for MaxPool2D {
         Ok(new_shape)
     }
 
-    fn f<T: TensorType>(&self, t: DTensor<T>) -> LNResult<DTensor<T>> {
+    fn f<T: TensorType>(&self, t: &DTensor<T>) -> LNResult<DTensor<T>> {
         let src = t.as_slice();
         let shape = t.dim();
         // https://pytorch.org/docs/stable/generated/torch.nn.MaxPool2d.html
@@ -656,7 +658,7 @@ impl Map2 for Conv2D {
         Ok(Shape::from_vec(new_shape))
     }
 
-    fn f<T: TensorType>(&self, t: DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>> {
+    fn f<T: TensorType>(&self, t: &DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>> {
         self.conv2d(t, w)
         // let (p1, p2, p3, p4) = (self.0.pads.0, self.0.pads.1, self.0.pads.2, self.0.pads.3);
         // let (padding, t) = if p1 != p2 || p1 != p3 || p1 != p4 {
@@ -796,15 +798,15 @@ impl Conv2DParam {
 impl Conv2D {
     pub(crate) fn apply(&self, inputs: Tensors) -> LNResult<Tensor> {
         let (a1, a2) = args_2(inputs);
-        Ok(Tensor::Own(Value(self.map(a1, a2)?)))
+        Ok(Tensor::Own(Rc::new(Value(self.map(a1, a2)?))))
     }
 
-    fn conv2d<T: TensorType>(&self, t1: DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>> {
+    fn conv2d<T: TensorType>(&self, t1: &DTensor<T>, w: &DTensor<T>) -> LNResult<DTensor<T>> {
         let (p1, p2, p3, p4) = (self.0.pads.0, self.0.pads.1, self.0.pads.2, self.0.pads.3);
         let (padding, t) = if p1 != p2 || p1 != p3 || p1 != p4 {
             (0, t1.pad(2, p1, p3, T::zero())?.pad(3, p2, p4, T::zero())?)
         } else {
-            (p1, t1)
+            (p1, t1.view())
         };
         let (b_size, c_in, i_h, i_w) = t.shape().dims4();
         let (c_out, c_in_k, k_h, k_w) = w.shape().dims4();
@@ -827,7 +829,7 @@ impl Conv2D {
         if groups == 1 {
             self.conv2d_single_group(&t, w, &p)
         } else {
-            self.conv2d_multi_group(t, w, &p)
+            self.conv2d_multi_group(&t, w, &p)
         }
     }
 
@@ -946,7 +948,7 @@ impl Conv2D {
 
     fn conv2d_multi_group<T: TensorType>(
         &self,
-        t1: DTensor<T>,
+        t1: &DTensor<T>,
         w: &DTensor<T>,
         p: &ParamsConv2D,
     ) -> LNResult<DTensor<T>> {
