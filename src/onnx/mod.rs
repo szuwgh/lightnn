@@ -195,10 +195,15 @@ impl onnx::NodeProto {
         let mut weights: Vec<(String, Tensor)> = Vec::new();
         let mut inputs: Vec<usize> = Vec::new();
         let total_inputs = self.take_input();
+        let name = self.take_name();
         for i in total_inputs.iter() {
             if initialize.contains_key(i) {
                 //这个就是权重信息
-                weights.push((i.to_string(), initialize.remove(i).unwrap()));
+                let w = initialize.remove(i).unwrap();
+                if &name == "mobilenetv20_output_flatten0_reshape0" {
+                    println!("w:{:?}", w.as_value_ref().as_tensor_ref());
+                }
+                weights.push((i.to_string(), w));
             } else {
                 inputs.push(*values.get(i).unwrap());
             }
@@ -215,7 +220,7 @@ impl onnx::NodeProto {
             .collect::<Vec<usize>>();
 
         let node = NodeBuilder::default()
-            .name(self.take_name())
+            .name(name)
             .op(self.get_op()?)
             .weights(weights.into_boxed_slice())
             .inputs(inputs.into_boxed_slice())
@@ -593,8 +598,18 @@ mod op_tests {
     }
 
     #[test]
+    fn test_reshape_reduced_dims() {
+        input2_infer("test_reshape_reduced_dims");
+    }
+
+    #[test]
     fn test_reshape_allowzero_reordered() {
         input2_infer("test_reshape_allowzero_reordered");
+    }
+
+    #[test]
+    fn test_reshape_one_dim() {
+        input2_infer("test_reshape_one_dim");
     }
 
     #[test]

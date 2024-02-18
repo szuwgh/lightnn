@@ -2,6 +2,7 @@ use super::tensor::{Tensor, Value};
 use crate::core::tensor::Tensors;
 use crate::util::error::LNError;
 use crate::util::error::LNResult;
+use galois::error::GResult;
 use galois::DTensor;
 use galois::Shape;
 use galois::Tensor as GTensor;
@@ -14,7 +15,6 @@ use std::ops::Add as opAdd;
 use std::ops::Div;
 use std::ops::Mul;
 use std::ops::Sub;
-
 #[derive(Debug)]
 pub(crate) enum Op {
     Add(Add),
@@ -110,11 +110,24 @@ impl Reshape {
 impl Mapi64 for Reshape {
     const OP: &'static str = "reshape";
     fn f<T: TensorType>(&self, t: DTensor<T>, w: &DTensor<i64>) -> LNResult<DTensor<T>> {
+        let mut other_than_minus1 = 1usize;
+        for &mut v in w.iter() {
+            if v != -1 && v != 0 {
+                other_than_minus1 *= v as usize
+            }
+        }
+
         let shape = w
             .as_slice()
             .iter()
-            .map(|e| e.as_usize())
-            .collect::<Vec<usize>>();
+            .enumerate()
+            .map(|(idx, &e)| match e {
+                -1 => Ok(t.elem_count() / other_than_minus1),
+                0 => t.single_dim(idx),
+                _ => Ok(e.as_usize()),
+            })
+            .collect::<GResult<Vec<usize>>>()?;
+
         Ok(t.into_reshape(Shape::from_vec(shape)))
     }
 }

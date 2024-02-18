@@ -28,14 +28,14 @@ impl Tensor {
         Tensor::Own(Value(t))
     }
 
-    pub(crate) fn as_value_ref(&self) -> &Value {
+    pub fn as_value_ref(&self) -> &Value {
         match self {
             Tensor::Own(v) => &v,
             Tensor::Share(v) => v.as_ref(),
         }
     }
 
-    pub(crate) fn as_value(self) -> Value {
+    pub fn as_value(self) -> Value {
         match self {
             Tensor::Own(v) => v,
             Tensor::Share(_) => panic!("not get share value"),

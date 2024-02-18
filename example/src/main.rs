@@ -20,4 +20,5 @@ fn main() {
     let t = lnTensor::new(Tensor::F32(m1));
     session.set_input(smallvec![t]);
     let t = session.run().unwrap();
+    println!("{:?}", t[0].as_value_ref().as_tensor_ref());
 }

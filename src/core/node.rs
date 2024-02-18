@@ -22,7 +22,7 @@ impl Node {
         let inputs = self
             .inputs
             .iter()
-            .map(|i| value.get_mut(*i).unwrap().take().unwrap())
+            .map(|i| value.get(*i).unwrap().clone().unwrap())
             .collect::<Tensors>();
         Ok(inputs)
     }
